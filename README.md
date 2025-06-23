@@ -43,6 +43,7 @@ outline of the main pieces, their pure mathematical roots and practical roles.
 | `metric_tensor.hpp` | Differential geometry | Tools for defining metrics on manifolds. |
 | `relational_vector.h` | Graph metrics | Compute shortest paths through relational graphs and project them into continuous space. |
 | `modspace.h` | Analysis | Generates modulated parameter ranges (non‑linear spacing). |
+| `stencil.h` | Numerical methods, field theory | Defines and generates stencils for local operators in arbitrary dimensions, supporting both classical and interaction-field-based arrangements. |
 
 These components combine to express shapes common in engineering (lines,
 surfaces, volumes) and arbitrary parametrised forms.  They are designed to work
@@ -56,3 +57,29 @@ By keeping everything vectorised, these abstractions scale to large simulations
 or learning tasks.  The delayed computation graphs allow transformations to be
 scheduled and optimised before execution, bridging discrete mesh operations with
 continuous formulas.
+
+## Advanced Faculties & Design Philosophy
+
+- **Generalized Stencils & Interaction Fields:**
+  The stencil API supports not only classical axis-aligned (rectangular) stencils but also fully generalized, n-dimensional interaction fields. These allow contributors to define local operators or sampling patterns based on physical, neural, or abstract interaction rules, with pole arrangements determined by equilibrium in force fields or other state equations. This enables meshless, adaptive, or emergent numerical methods beyond traditional grid-based approaches.
+
+- **Relational Vector Spaces:**
+  The relational vector API enables shortest-path and local-projection computations in arbitrary relational graphs, supporting analysis and optimization in highly non-Euclidean, discontinuous, or even paradoxically folded spaces. This is crucial for neural graphs, knowledge graphs, and advanced mesh or network analysis.
+
+- **Composable, Vectorizable Operations:**
+  All operations are designed to be vectorizable and composable, supporting both structured and unstructured meshes. This ensures scalability and flexibility for scientific computing, simulation, and machine learning.
+
+- **Agent-Oriented & Assistive Design:**
+  The architecture anticipates autonomous and assistive agent integration, with clear modular boundaries and extensible interfaces. Contributors are encouraged to design with vectorization, composability, and mesh-agnosticism in mind.
+
+- **Functional & Delayed Computation:**
+  The system favors functional designs and delayed computation graphs, allowing for flexible scheduling, optimization, and transformation of operations before execution. This bridges the gap between discrete and continuous geometry, and between analytic and numerical methods.
+
+## For Contributors & Agents
+- Prefer functional, vectorized, and composable designs.
+- Support both structured and unstructured meshes.
+- Use the advanced stencil and relational APIs to express new numerical, physical, or learning operations.
+- Document new modules with both mathematical and practical context.
+- Design for extensibility, agent integration, and future GPU acceleration.
+
+This project is a platform for next-generation geometry, simulation, and learning systems—where the scaffolding is as important as the finished code, and where new mathematical and computational ideas can be prototyped and scaled.
