@@ -7,5 +7,6 @@ build/
 *.exe
 *.pyc
 __pycache__/
+.vs/
 .vscode/
 .idea/

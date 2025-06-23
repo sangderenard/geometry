@@ -6,6 +6,13 @@ extern "C" {
 #endif
 
 #include <stddef.h>
+#ifdef _WIN32
+#include <windows.h>
+typedef CRITICAL_SECTION node_mutex_t;
+#else
+#include <pthread.h>
+typedef pthread_mutex_t node_mutex_t;
+#endif
 
 struct Node;
 
@@ -50,7 +57,28 @@ typedef struct Node {
 
     NodeExposure* exposures;
     size_t num_exposures, cap_exposures;
+
+    node_mutex_t mutex;
 } Node;
+
+// --- Geneology structure ---
+typedef struct Geneology Geneology;
+
+Geneology* geneology_create(void);
+void geneology_destroy(Geneology* g);
+void geneology_add_node(Geneology* g, Node* node);
+void geneology_remove_node(Geneology* g, Node* node);
+size_t geneology_num_nodes(const Geneology* g);
+Node* geneology_get_node(const Geneology* g, size_t idx);
+
+// Traversal (DFS, BFS)
+typedef void (*GeneologyVisitFn)(Node* node, void* user);
+void geneology_traverse_dfs(Geneology* g, Node* root, GeneologyVisitFn visit, void* user);
+void geneology_traverse_bfs(Geneology* g, Node* root, GeneologyVisitFn visit, void* user);
+
+// Stubs for search/sort
+void geneology_sort(Geneology* g, int (*cmp)(const Node*, const Node*));
+Node* geneology_search(Geneology* g, int (*pred)(const Node*, void*), void* user);
 
 Node* node_create(void);
 void node_destroy(Node* node);
@@ -78,6 +106,57 @@ void node_scatter_to_siblings(Node* node, void* data);
 void node_gather_from_siblings(Node* node, void* out);
 void node_scatter_to_descendants(Node* node, void* data);
 void node_gather_from_ancestors(Node* node, void* out);
+
+// --- SimpleGraph edge types ---
+typedef enum {
+    EDGE_PARENT_CHILD_CONTIGUOUS,
+    EDGE_LINEAGE_NONCONTIGUOUS,
+    EDGE_SIBLING_SIBLING_CONTIGUOUS,
+    EDGE_SIBLING_SIBLING_NONCONTIGUOUS,
+    EDGE_ARBITRARY
+} SimpleGraphEdgeType;
+
+typedef struct {
+    Node* src;
+    Node* dst;
+    SimpleGraphEdgeType type;
+    int relation; // index or type for the relationship
+} SimpleGraphEdge;
+
+// --- Feature hash map (simple open addressing) ---
+typedef struct {
+    char* key;
+    void* value; // pointer to tensor (ONNX/Eigen)
+} SimpleGraphFeatureEntry;
+
+typedef struct {
+    SimpleGraphFeatureEntry* entries;
+    size_t num_entries, cap_entries;
+} SimpleGraphFeatureMap;
+
+// --- SimpleGraph structure ---
+typedef struct {
+    Geneology* geneology;
+    SimpleGraphEdge* edges;
+    size_t num_edges, cap_edges;
+
+    // Contiguous feature storage (array of pointers to tensors)
+    void** feature_block;
+    size_t num_features, cap_features;
+
+    // Per-node feature hash maps (indexed by node index in geneology)
+    SimpleGraphFeatureMap* node_feature_maps;
+    size_t num_nodes, cap_nodes;
+} SimpleGraph;
+
+SimpleGraph* simplegraph_create(Geneology* g);
+void simplegraph_destroy(SimpleGraph* graph);
+void simplegraph_add_edge(SimpleGraph* graph, Node* src, Node* dst, SimpleGraphEdgeType type, int relation);
+void simplegraph_add_feature(SimpleGraph* graph, Node* node, const char* feature_name, void* tensor_ptr);
+void* simplegraph_get_feature(SimpleGraph* graph, Node* node, const char* feature_name);
+
+void simplegraph_forward(SimpleGraph* graph);
+void simplegraph_backward(SimpleGraph* graph);
 
 #ifdef __cplusplus
 }
