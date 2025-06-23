@@ -1,7 +1,9 @@
 #include "geometry/utils.h"
 #include <stdlib.h>
 #include <string.h>
+#include <stdint.h>
 
+// === Utility ===
 static void* grow_array(void* array, size_t elem_size, size_t* cap) {
     size_t new_cap = (*cap == 0) ? 4 : (*cap * 2);
     void* new_arr = realloc(array, new_cap * elem_size);
@@ -9,13 +11,72 @@ static void* grow_array(void* array, size_t elem_size, size_t* cap) {
     return new_arr;
 }
 
+// === Node Data Structures ===
+
+typedef void (*NodeForwardFn)(struct Node*, void*);
+typedef void (*NodeBackwardFn)(struct Node*, void*);
+typedef void (*NodeProduceFn)(struct Node*, void*);
+typedef void (*NodeReverseFn)(struct Node*, void*);
+typedef void (*NodeVisitFn)(struct Node*, int, void*);
+
+// A relation defines the behavior between connected nodes.
+typedef struct {
+    int type;
+    NodeForwardFn forward;
+    NodeBackwardFn backward;
+    char* name;              // Optional name for debugging
+    void* context;           // Optional user-defined state
+} NodeRelation;
+
+// A node link identifies a connection and its associated relation.
+typedef struct {
+    struct Node* node;
+    int relation;
+} NodeLink;
+
+// A public exposure defines external functionality.
+typedef struct {
+    NodeProduceFn produce;
+    NodeReverseFn reverse;
+} NodeExposure;
+
+// Core node structure.
+typedef struct Node {
+    // Identity
+    char* id;
+    uint64_t uid;
+
+    // DAG Topology
+    NodeLink* forward_links;
+    NodeLink* backward_links;
+    size_t num_forward_links, cap_forward_links;
+    size_t num_backward_links, cap_backward_links;
+
+    // Relations (node-node interaction types)
+    NodeRelation* relations;
+    size_t num_relations, cap_relations;
+
+    // Features (descriptive metadata)
+    char** features;
+    size_t num_features, cap_features;
+
+    // Public Interface
+    NodeExposure* exposures;
+    size_t num_exposures, cap_exposures;
+} Node;
+
+// === Node Lifecycle ===
+
 Node* node_create(void) {
     Node* n = (Node*)calloc(1, sizeof(Node));
+    static uint64_t counter = 1;
+    n->uid = counter++;
     return n;
 }
 
 void node_destroy(Node* node) {
     if (!node) return;
+    free(node->id);
     free(node->relations);
     if (node->features) {
         for (size_t i = 0; i < node->num_features; ++i) {
@@ -29,20 +90,17 @@ void node_destroy(Node* node) {
     free(node);
 }
 
-size_t node_add_relation(Node* node, int type, NodeForwardFn forward, NodeBackwardFn backward) {
+// === Node API ===
+
+size_t node_add_relation(Node* node, int type, NodeForwardFn forward, NodeBackwardFn backward, const char* name, void* context) {
     if (node->num_relations == node->cap_relations) {
         void* tmp = grow_array(node->relations, sizeof(NodeRelation), &node->cap_relations);
         if (!tmp) return (size_t)-1;
         node->relations = (NodeRelation*)tmp;
     }
-    NodeRelation r = {type, forward, backward};
+    NodeRelation r = {type, forward, backward, strdup(name), context};
     node->relations[node->num_relations] = r;
     return node->num_relations++;
-}
-
-NodeRelation* node_get_relation(const Node* node, size_t index) {
-    if (!node || index >= node->num_relations) return NULL;
-    return &node->relations[index];
 }
 
 size_t node_add_feature(Node* node, const char* feature) {
@@ -53,11 +111,6 @@ size_t node_add_feature(Node* node, const char* feature) {
     }
     node->features[node->num_features] = strdup(feature);
     return node->num_features++;
-}
-
-const char* node_get_feature(const Node* node, size_t index) {
-    if (!node || index >= node->num_features) return NULL;
-    return node->features[index];
 }
 
 size_t node_add_exposure(Node* node, NodeProduceFn produce, NodeReverseFn reverse) {
@@ -71,10 +124,7 @@ size_t node_add_exposure(Node* node, NodeProduceFn produce, NodeReverseFn revers
     return node->num_exposures++;
 }
 
-NodeExposure* node_get_exposure(const Node* node, size_t index) {
-    if (!node || index >= node->num_exposures) return NULL;
-    return &node->exposures[index];
-}
+// === DAG Linkage ===
 
 size_t node_add_forward_link(Node* node, Node* link, int relation) {
     if (node->num_forward_links == node->cap_forward_links) {
@@ -98,16 +148,6 @@ size_t node_add_backward_link(Node* node, Node* link, int relation) {
     return node->num_backward_links++;
 }
 
-const NodeLink* node_get_forward_link(const Node* node, size_t index) {
-    if (!node || index >= node->num_forward_links) return NULL;
-    return &node->forward_links[index];
-}
-
-const NodeLink* node_get_backward_link(const Node* node, size_t index) {
-    if (!node || index >= node->num_backward_links) return NULL;
-    return &node->backward_links[index];
-}
-
 size_t node_add_bidirectional_link(Node* a, Node* b, int relation) {
     if (!a || !b) return (size_t)-1;
     size_t idx1 = node_add_forward_link(a, b, relation);
@@ -115,6 +155,8 @@ size_t node_add_bidirectional_link(Node* a, Node* b, int relation) {
     if (idx1 == (size_t)-1 || idx2 == (size_t)-1) return (size_t)-1;
     return idx1;
 }
+
+// === DAG Traversal Utilities ===
 
 void node_for_each_forward(Node* node, NodeVisitFn visit, void* user) {
     if (!node || !visit) return;
@@ -153,20 +195,3 @@ void node_gather_from_siblings(Node* node, void* out) {
         }
     }
 }
-
-void node_scatter_to_descendants(Node* node, void* data) {
-    if (!node) return;
-    node_scatter_to_siblings(node, data);
-    for (size_t i = 0; i < node->num_forward_links; ++i) {
-        node_scatter_to_descendants(node->forward_links[i].node, data);
-    }
-}
-
-void node_gather_from_ancestors(Node* node, void* out) {
-    if (!node) return;
-    node_gather_from_siblings(node, out);
-    for (size_t i = 0; i < node->num_backward_links; ++i) {
-        node_gather_from_ancestors(node->backward_links[i].node, out);
-    }
-}
-
