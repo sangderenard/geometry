@@ -15,16 +15,108 @@
 #include "geometry/graph_ops.h"
 #include <stddef.h>
 
+// Forward declaration for path hash dictionary
+// This will be used for relationship path caching in Geneology
+typedef struct PathHashDict PathHashDict;
+
 // Forward declarations for shared utilities
 static void common_sort(void* container, int (*cmp)(const Node*, const Node*));
 static void common_contiguous(void* container);
+
+// =====================
+// Node Locking API (declarations only)
+// =====================
+void node_lock(Node* node); // Lock the node's mutex
+void node_unlock(Node* node); // Unlock the node's mutex
+int node_trylock(Node* node); // Try to lock the node's mutex (non-blocking)
+int node_is_locked(const Node* node); // Check if the node is currently locked
+
+// =====================
+// Geneology Lock Bank (declarations only)
+// =====================
+struct LockRequestQueue;
+
+typedef struct GeneologyLockBank {
+    struct LockRequestQueue* request_queue;
+    Node** locked_nodes;
+    size_t num_locked, cap_locked;
+    node_mutex_t bank_mutex;
+} GeneologyLockBank;
+
+GeneologyLockBank* geneology_lockbank_create(void);
+void geneology_lockbank_destroy(GeneologyLockBank* bank);
+void geneology_lockbank_request(GeneologyLockBank* bank, Node** nodes, size_t num_nodes);
+int geneology_lockbank_confirm(GeneologyLockBank* bank, Node** nodes, size_t num_nodes);
+void geneology_lockbank_release(GeneologyLockBank* bank, Node** nodes, size_t num_nodes);
+size_t geneology_subgraph_union(Node** a, size_t a_count, Node** b, size_t b_count, Node** out_union, size_t out_cap);
+// Guidance: implement set theory helpers for subgraph management (union, intersection, difference, etc.)
 
 // =====================
 // Node Graph Operations
 // =====================
 
 void node_add_edge(Node* src, Node* dst, int relation) {
-    // TODO: Implement edge addition logic
+    // =============================
+    // Cornerstone: Add an edge from src to dst with a given relation
+    //
+    // This function attaches dst to src according to the relation type.
+    // It always creates bidirectional links (forward and backward).
+    //
+    // The relation argument should correspond to an enum value representing the edge type.
+    //
+    // You may want to define your own enum for relations if not already present.
+    // Example:
+    //   enum NodeRelationType {
+    //     REL_PARENT_CHILD_CONTIGUOUS,
+    //     REL_LINEAGE_NONCONTIGUOUS,
+    //     REL_SIBLING_LEFT,
+    //     REL_SIBLING_RIGHT,
+    //     REL_SIBLING_NONCONTIGUOUS,
+    //     REL_ARBITRARY
+    //   };
+    //
+    // This switch block can be extended as you add more relation types.
+
+    switch (relation) {
+        case EDGE_PARENT_CHILD_CONTIGUOUS:
+            // Parent-child (contiguous): src is parent, dst is child
+            node_add_forward_link(src, dst, relation);   // src -> dst (child)
+            node_add_backward_link(dst, src, relation);  // dst -> src (parent)
+            break;
+        case EDGE_LINEAGE_NONCONTIGUOUS:
+            // Lineage (noncontiguous): e.g., ancestor/descendant
+            node_add_forward_link(src, dst, relation);
+            node_add_backward_link(dst, src, relation);
+            break;
+        case EDGE_SIBLING_SIBLING_CONTIGUOUS:
+            // Sibling (contiguous): src is left sibling, dst is right sibling
+            node_add_forward_link(src, dst, relation);   // src -> dst (right)
+            node_add_backward_link(dst, src, relation);  // dst -> src (left)
+            break;
+        case EDGE_SIBLING_SIBLING_NONCONTIGUOUS:
+            // Sibling (noncontiguous): e.g., cousin or distant sibling
+            node_add_forward_link(src, dst, relation);
+            node_add_backward_link(dst, src, relation);
+            break;
+        case EDGE_ARBITRARY:
+        default:
+            // Arbitrary or unknown edge type: treat as generic bidirectional
+            node_add_forward_link(src, dst, relation);
+            node_add_backward_link(dst, src, relation);
+            break;
+    }
+
+    //
+    // If you want to prevent duplicate edges, you could scan the forward/backward links first.
+    // If you want to support custom per-relation logic, add more cases or helper functions.
+    //
+    // All stencil attachment points (parent, child, left, right, etc.) are handled as parallel arrays
+    // of forward and backward links, differentiated by the relation type.
+    //
+    // This approach ensures the graph is always fully connected and navigable in both directions.
+    //
+    // Expand this function as you add more relation types or need more complex behaviors.
+
 }
 
 void node_remove_edge(Node* src, Node* dst, int relation) {
@@ -59,6 +151,25 @@ size_t node_num_siblings(const Node* node) {
 Node* node_get_sibling(const Node* node, size_t idx) {
     // TODO: Return idx-th sibling
     return NULL;
+}
+
+// =====================
+// Runtime Relationship Query
+// =====================
+
+/**
+ * @brief Compute the relationship type between two nodes at runtime.
+ *        This function traverses the graph and determines the relationship
+ *        (e.g., parent, child, sibling, cousin, arbitrary, etc.)
+ *        according to the current graph structure and relation types.
+ *        Returns an enum or code representing the relationship, or -1 if unrelated.
+ *        Extend this as needed for your taxonomy.
+ */
+int node_query_relationship(const Node* a, const Node* b) {
+    // TODO: Implement runtime relationship query logic
+    // Example: BFS/DFS from a to b, tracking relation types and hops
+    // Return a code or enum for the relationship type
+    return -1;
 }
 
 // =====================
@@ -101,6 +212,13 @@ const GraphOps NodeGraphOps = {
 // ========================
 // Geneology Graph Operations
 // ========================
+
+// Update Geneology struct definition to match header
+typedef struct Geneology {
+    Node** nodes;
+    size_t num_nodes, cap_nodes;
+    PathHashDict* path_hash_dict; // Guidance: implement as a hash map from path hash to relationship info
+} Geneology;
 
 void geneology_merge(Geneology* dest, const Geneology* src) {
     // TODO: Implement merge logic

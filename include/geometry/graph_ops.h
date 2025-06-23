@@ -98,6 +98,20 @@ size_t node_num_siblings(const Node* node);
  */
 Node* node_get_sibling(const Node* node, size_t idx);
 
+// =====================
+// Runtime Relationship Query
+// =====================
+
+/**
+ * @brief Compute the relationship type between two nodes at runtime.
+ *        This function traverses the graph and determines the relationship
+ *        (e.g., parent, child, sibling, cousin, arbitrary, etc.)
+ *        according to the current graph structure and relation types.
+ *        Returns an enum or code representing the relationship, or -1 if unrelated.
+ *        Extend this as needed for your taxonomy.
+ */
+int node_query_relationship(const Node* a, const Node* b);
+
 // ========================
 // Geneology Graph Operations
 // ========================

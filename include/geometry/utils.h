@@ -104,7 +104,19 @@ void emergence_resolve(Emergence* e);
 void emergence_update(Emergence* e, Node* node, double activation, uint64_t global_step, uint64_t timestamp);
 
 // --- Geneology structure ---
-typedef struct Geneology Geneology;
+
+// --- Path hash dictionary for relationship path caching ---
+// This dictionary will map a path hash (e.g., from a path vector or encoding)
+// to a relationship descriptor or cached result. Use a suitable hash map structure.
+// Implementation and type details to be defined later.
+typedef struct PathHashDict PathHashDict;
+
+typedef struct Geneology {
+    Node** nodes;
+    size_t num_nodes, cap_nodes;
+    // Path hash dictionary for fast relationship queries
+    PathHashDict* path_hash_dict; // Guidance: implement as a hash map from path hash to relationship info
+} Geneology;
 
 Geneology* geneology_create(void);
 void geneology_destroy(Geneology* g);
@@ -151,6 +163,99 @@ void node_scatter_to_siblings(Node* node, void* data);
 void node_gather_from_siblings(Node* node, void* out);
 void node_scatter_to_descendants(Node* node, void* data);
 void node_gather_from_ancestors(Node* node, void* out);
+
+// =====================
+// LOCKING POLICY AND DESIGN
+// =====================
+/*
+Locking in this system is designed for both fine-grained (node-level) and coarse-grained (subgraph/geneology-level) concurrency control.
+
+Node Locking:
+- Each Node contains a node_mutex_t mutex for exclusive access.
+- Node locking functions (lock, unlock, trylock, is_locked) provide direct, thread-safe access to individual nodes.
+- Nodes should be locked before any mutation or critical read, and unlocked as soon as possible.
+
+Geneology Lock Bank:
+- The GeneologyLockBank manages locks for sets of nodes (subgraphs) and coordinates concurrent access across the entire geneology.
+- The lock bank maintains a queue of lock requests (LockRequestQueue). Requests for overlapping subgraphs are queued and block until all required nodes are available.
+- Non-overlapping lock requests may be granted out-of-order for maximum concurrency.
+- When a lock request is granted, the lock bank issues an asynchronous notification ("your table is ready" alarm) to the requesting thread, which may be blocked waiting for the lock. This allows the thread to proceed as soon as the lock is available, without polling.
+- The lock bank must prevent deadlocks, ensure fairness, and support lock escalation (from node to subgraph) as needed.
+- Subgraph set operations (union, intersection, difference) are provided to efficiently manage and compare lock requests.
+
+Design Requirements:
+- All lock acquisition and release must be coordinated through the lock bank for subgraph operations.
+- The lock bank must be able to confirm lock status from any thread, not just the bank's own thread.
+- The system must support both blocking and non-blocking lock requests, with asynchronous notification for blocking requests.
+- Locking policies must be clearly documented and enforced to avoid deadlocks and starvation.
+*/
+// =====================
+// Node Locking API
+// =====================
+
+// Lock the node's mutex
+void node_lock(Node* node);
+// Unlock the node's mutex
+void node_unlock(Node* node);
+// Try to lock the node's mutex (non-blocking), returns 1 if successful, 0 otherwise
+int node_trylock(Node* node);
+// Check if the node is currently locked (non-blocking)
+int node_is_locked(const Node* node);
+
+// =====================
+// Geneology Lock Bank
+// =====================
+
+// Forward declaration for lock request queue
+struct LockRequestQueue;
+
+// Structure for managing locks across a geneology (subgraph lock bank)
+typedef struct GeneologyLockBank {
+    // Queue of pending lock requests
+    struct LockRequestQueue* request_queue;
+    // Set of currently locked nodes (could be a hash set or array)
+    Node** locked_nodes;
+    size_t num_locked, cap_locked;
+    // Mutex for synchronizing access to the lock bank
+    node_mutex_t bank_mutex;
+} GeneologyLockBank;
+
+// Initialize/destroy the lock bank
+GeneologyLockBank* geneology_lockbank_create(void);
+void geneology_lockbank_destroy(GeneologyLockBank* bank);
+
+// Request locks for a set of nodes (subgraph); non-blocking, will queue if not immediately available
+void geneology_lockbank_request(GeneologyLockBank* bank, Node** nodes, size_t num_nodes);
+// Confirm if a set of nodes is locked (can be called outside the bank thread)
+int geneology_lockbank_confirm(GeneologyLockBank* bank, Node** nodes, size_t num_nodes);
+// Release locks for a set of nodes
+void geneology_lockbank_release(GeneologyLockBank* bank, Node** nodes, size_t num_nodes);
+
+// =====================
+// Graph Set Operations (for subgraph management)
+// =====================
+/*
+GraphSetOps provides a general interface for set operations on node sets (subgraphs),
+including union, intersection, difference, and membership checks. These are useful for
+lock management, relationship queries, and subgraph analysis.
+*/
+typedef struct GraphSetOps {
+    // Union of two sets (a ? b)
+    size_t (*set_union)(Node** a, size_t a_count, Node** b, size_t b_count, Node** out_union, size_t out_cap);
+    // Intersection of two sets (a ? b)
+    size_t (*set_intersection)(Node** a, size_t a_count, Node** b, size_t b_count, Node** out_inter, size_t out_cap);
+    // Difference of two sets (a \ b)
+    size_t (*set_difference)(Node** a, size_t a_count, Node** b, size_t b_count, Node** out_diff, size_t out_cap);
+    // Check if a set contains a node
+    int (*set_contains)(Node** set, size_t set_count, Node* node);
+    // Guidance: add more set operations as needed (e.g., symmetric difference, subset, etc.)
+} GraphSetOps;
+
+// Default set operation implementations (declarations only)
+size_t graph_set_union(Node** a, size_t a_count, Node** b, size_t b_count, Node** out_union, size_t out_cap);
+size_t graph_set_intersection(Node** a, size_t a_count, Node** b, size_t b_count, Node** out_inter, size_t out_cap);
+size_t graph_set_difference(Node** a, size_t a_count, Node** b, size_t b_count, Node** out_diff, size_t out_cap);
+int graph_set_contains(Node** set, size_t set_count, Node* node);
 
 // --- SimpleGraph edge types ---
 typedef enum {
