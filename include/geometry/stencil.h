@@ -50,8 +50,27 @@ struct GeneralStencil {
 // Create a custom N-pole stencil in D dimensions (user provides offsets and weights, can provide a state resolver)
 GeneralStencil* stencil_create_custom(size_t dims, size_t count, const int* offsets, const double* weights, StencilStateResolver resolver, void* resolver_data);
 
-// Create a D-dimensional rectangular stencil of given radius (axis-aligned)
-GeneralStencil* stencil_create_rectangular_nd(size_t dims, int radius);
+// Common rectangular stencil variants
+typedef enum {
+    // Default axis-aligned cross (6 point in 3D, 5 point in 2D, etc.)
+    RECT_STENCIL_DEFAULT = 0,
+    // Axis-aligned neighbours only (2*d points)
+    RECT_STENCIL_AXIS_ALIGNED,
+    // Axis-aligned neighbours plus centre (2*d + 1)
+    RECT_STENCIL_AXIS_ALIGNED_WITH_CENTER,
+    // Full box without centre ( (2*radius+1)^d - 1 )
+    RECT_STENCIL_FULL,
+    // Full box including centre ( (2*radius+1)^d )
+    RECT_STENCIL_FULL_WITH_CENTER,
+    // Classical 14 point stencil in 3D (axis + face diagonals)
+    RECT_STENCIL_14_POINT_3D,
+    // 24-cell vertices in 4D (\u00b11,\u00b11,0,0 permutations)
+    RECT_STENCIL_24_CELL_4D
+} RectangularStencilType;
+
+// Create a D-dimensional rectangular stencil of given radius and pattern
+GeneralStencil* stencil_create_rectangular_nd(size_t dims, int radius,
+                                              RectangularStencilType type);
 
 // Create a D-dimensional polar (equidistant) stencil of given radius (Euclidean distance)
 GeneralStencil* stencil_create_polar_nd(size_t dims, int radius);
