@@ -10,6 +10,16 @@ list(FILTER CPP_SOURCES EXCLUDE REGEX "dec_toolkit_header.cpp$")
 file(GLOB_RECURSE C_SOURCES "src/*.c")
 add_library(vecdec ${CPP_SOURCES} ${C_SOURCES})
 
+add_library(geometry_stencil
+    src/geometry/stencil.c
+)
+target_include_directories(geometry_stencil PUBLIC include)
+
+add_library(geometry_relational_vector
+    src/geometry/relational_vector.c
+)
+target_include_directories(geometry_relational_vector PUBLIC include)
+
 # Examples are optional; disable by default to avoid external deps
 # add_executable(example examples/minimal.cpp)
 # target_link_libraries(example vecdec)

@@ -16,6 +16,27 @@ static void* grow_array(void* array, size_t elem_size, size_t* cap) {
     return new_arr;
 }
 
+// Helper to add a node to a multidimensional array (e.g., parents, children, siblings)
+static void node_add_to_stencil(Node**** arr, size_t** num_arr, size_t* num_dims, size_t dim, Node* target) {
+    // Grow dimensions if needed
+    if (dim >= *num_dims) {
+        size_t old_dims = *num_dims;
+        size_t new_dims = dim + 1;
+        *arr = realloc(*arr, new_dims * sizeof(Node**));
+        *num_arr = realloc(*num_arr, new_dims * sizeof(size_t));
+        for (size_t d = old_dims; d < new_dims; ++d) {
+            (*arr)[d] = NULL;
+            (*num_arr)[d] = 0;
+        }
+        *num_dims = new_dims;
+    }
+    // Grow array in this dimension
+    size_t idx = (*num_arr)[dim];
+    (*arr)[dim] = realloc((*arr)[dim], (idx + 1) * sizeof(Node*));
+    (*arr)[dim][idx] = target;
+    (*num_arr)[dim]++;
+}
+
 // === Node Data Structures ===
 
 // All type definitions are provided in the public header.
@@ -153,6 +174,19 @@ Node* node_create(void) {
 #else
     pthread_mutex_init(&n->mutex, NULL);
 #endif
+    // Initialize multidimensional stencil arrays to NULL/0
+    n->parents = NULL;
+    n->num_parents = NULL;
+    n->num_dims_parents = 0;
+    n->children = NULL;
+    n->num_children = NULL;
+    n->num_dims_children = 0;
+    n->left_siblings = NULL;
+    n->num_left_siblings = NULL;
+    n->num_dims_left_siblings = 0;
+    n->right_siblings = NULL;
+    n->num_right_siblings = NULL;
+    n->num_dims_right_siblings = 0;
     return n;
 }
 
@@ -174,6 +208,27 @@ void node_destroy(Node* node) {
     free(node->exposures);
     free(node->forward_links);
     free(node->backward_links);
+    // Free multidimensional stencil arrays
+    if (node->parents) {
+        for (size_t d = 0; d < node->num_dims_parents; ++d) free(node->parents[d]);
+        free(node->parents);
+        free(node->num_parents);
+    }
+    if (node->children) {
+        for (size_t d = 0; d < node->num_dims_children; ++d) free(node->children[d]);
+        free(node->children);
+        free(node->num_children);
+    }
+    if (node->left_siblings) {
+        for (size_t d = 0; d < node->num_dims_left_siblings; ++d) free(node->left_siblings[d]);
+        free(node->left_siblings);
+        free(node->num_left_siblings);
+    }
+    if (node->right_siblings) {
+        for (size_t d = 0; d < node->num_dims_right_siblings; ++d) free(node->right_siblings[d]);
+        free(node->right_siblings);
+        free(node->num_right_siblings);
+    }
     free(node);
 }
 
@@ -186,8 +241,43 @@ static size_t node_add_relation_full(Node* node, int type, NodeForwardFn forward
         node->relations = (NodeRelation*)tmp;
     }
     NodeRelation r = {type, forward, backward, strdup(name), context};
-    node->relations[node->num_relations] = r;
-    return node->num_relations++;
+    size_t idx = node->num_relations;
+    node->relations[idx] = r;
+    node->num_relations++;
+
+    // Default to 0th dimension for now
+    size_t dim = 0;
+    Node* partner = context ? (Node*)context : NULL;
+    switch (type) {
+        case EDGE_PARENT_CHILD_CONTIGUOUS:
+            if (partner) node_add_to_stencil(&node->children, &node->num_children, &node->num_dims_children, dim, partner);
+            break;
+        case EDGE_CHILD_PARENT_CONTIGUOUS:
+            if (partner) node_add_to_stencil(&node->parents, &node->num_parents, &node->num_dims_parents, dim, partner);
+            break;
+        case EDGE_SIBLING_LEFT_TO_RIGHT_CONTIGUOUS:
+            if (partner) node_add_to_stencil(&node->right_siblings, &node->num_right_siblings, &node->num_dims_right_siblings, dim, partner);
+            break;
+        case EDGE_SIBLING_RIGHT_TO_LEFT_CONTIGUOUS:
+            if (partner) node_add_to_stencil(&node->left_siblings, &node->num_left_siblings, &node->num_dims_left_siblings, dim, partner);
+            break;
+        case EDGE_SIBLING_SIBLING_NONCONTIGUOUS:
+            if (partner) {
+                node_add_to_stencil(&node->left_siblings, &node->num_left_siblings, &node->num_dims_left_siblings, dim, partner);
+                node_add_to_stencil(&node->right_siblings, &node->num_right_siblings, &node->num_dims_right_siblings, dim, partner);
+            }
+            break;
+        case EDGE_LINEAGE_NONCONTIGUOUS:
+            if (partner) {
+                node_add_to_stencil(&node->parents, &node->num_parents, &node->num_dims_parents, dim, partner);
+                node_add_to_stencil(&node->children, &node->num_children, &node->num_dims_children, dim, partner);
+            }
+            break;
+        case EDGE_ARBITRARY:
+        default:
+            break;
+    }
+    return idx;
 }
 
 size_t node_add_relation(Node* node, int type, NodeForwardFn forward, NodeBackwardFn backward) {
@@ -239,12 +329,57 @@ size_t node_add_backward_link(Node* node, Node* link, int relation) {
     return node->num_backward_links++;
 }
 
-size_t node_add_bidirectional_link(Node* a, Node* b, int relation) {
+size_t node_add_bidirectional_link(Node* a, Node* b, int relation, size_t dim) {
     if (!a || !b) return (size_t)-1;
+    // Add forward link for a -> b
     size_t idx1 = node_add_forward_link(a, b, relation);
-    size_t idx2 = node_add_backward_link(b, a, relation);
+    // Add to a's stencil (children, right_siblings, etc.)
+    switch (relation) {
+        case EDGE_PARENT_CHILD_CONTIGUOUS:
+            node_add_to_stencil(&a->children, &a->num_children, &a->num_dims_children, dim, b);
+            break;
+        case EDGE_SIBLING_LEFT_TO_RIGHT_CONTIGUOUS:
+            node_add_to_stencil(&a->right_siblings, &a->num_right_siblings, &a->num_dims_right_siblings, dim, b);
+            break;
+        default:
+            break;
+    }
+    // Add backward link for b -> a (inverse relation)
+    int inverse_relation = geneology_invert_relation(relation);
+    size_t idx2 = node_add_backward_link(b, a, inverse_relation);
+    // Add to b's stencil (parents, left_siblings, etc.)
+    switch (inverse_relation) {
+        case EDGE_CHILD_PARENT_CONTIGUOUS:
+            node_add_to_stencil(&b->parents, &b->num_parents, &b->num_dims_parents, dim, a);
+            break;
+        case EDGE_SIBLING_RIGHT_TO_LEFT_CONTIGUOUS:
+            node_add_to_stencil(&b->left_siblings, &b->num_left_siblings, &b->num_dims_left_siblings, dim, a);
+            break;
+        default:
+            break;
+    }
     if (idx1 == (size_t)-1 || idx2 == (size_t)-1) return (size_t)-1;
     return idx1;
+}
+
+int geneology_invert_relation(int relation_type) {
+    switch (relation_type) {
+        case EDGE_PARENT_CHILD_CONTIGUOUS:
+            return EDGE_CHILD_PARENT_CONTIGUOUS;
+        case EDGE_CHILD_PARENT_CONTIGUOUS:
+            return EDGE_PARENT_CHILD_CONTIGUOUS;
+        case EDGE_SIBLING_LEFT_TO_RIGHT_CONTIGUOUS:
+            return EDGE_SIBLING_RIGHT_TO_LEFT_CONTIGUOUS;
+        case EDGE_SIBLING_RIGHT_TO_LEFT_CONTIGUOUS:
+            return EDGE_SIBLING_LEFT_TO_RIGHT_CONTIGUOUS;
+        case EDGE_SIBLING_SIBLING_NONCONTIGUOUS:
+            return EDGE_SIBLING_SIBLING_NONCONTIGUOUS; // self-inverse
+        case EDGE_LINEAGE_NONCONTIGUOUS:
+            return EDGE_LINEAGE_NONCONTIGUOUS; // self-inverse or define more if needed
+        case EDGE_ARBITRARY:
+        default:
+            return EDGE_ARBITRARY;
+    }
 }
 
 // --- Adaptive Node Operations ---

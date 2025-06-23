@@ -48,6 +48,24 @@ typedef struct Node {
     double activation_sum;
     double activation_sq_sum;
 
+    // Multidimensional stencil arrays for relationships
+    struct Node*** parents;      // [dim][index] array of parent pointers
+    size_t* num_parents;        // [dim] number of parents per dimension
+    size_t num_dims_parents;    // number of parent dimensions
+
+    struct Node*** children;     // [dim][index] array of child pointers
+    size_t* num_children;        // [dim] number of children per dimension
+    size_t num_dims_children;    // number of child dimensions
+
+    struct Node*** left_siblings;  // [dim][index] array of left sibling pointers
+    size_t* num_left_siblings;     // [dim] number of left siblings per dimension
+    size_t num_dims_left_siblings; // number of left sibling dimensions
+
+    struct Node*** right_siblings; // [dim][index] array of right sibling pointers
+    size_t* num_right_siblings;    // [dim] number of right siblings per dimension
+    size_t num_dims_right_siblings;// number of right sibling dimensions
+
+    // Canonical relationship structure: links only
     NodeLink* forward_links;
     NodeLink* backward_links;
     size_t num_forward_links, cap_forward_links;
@@ -260,9 +278,11 @@ int graph_set_contains(Node** set, size_t set_count, Node* node);
 // --- SimpleGraph edge types ---
 typedef enum {
     EDGE_PARENT_CHILD_CONTIGUOUS,
-    EDGE_LINEAGE_NONCONTIGUOUS,
-    EDGE_SIBLING_SIBLING_CONTIGUOUS,
+    EDGE_CHILD_PARENT_CONTIGUOUS,
+    EDGE_SIBLING_LEFT_TO_RIGHT_CONTIGUOUS,
+    EDGE_SIBLING_RIGHT_TO_LEFT_CONTIGUOUS,
     EDGE_SIBLING_SIBLING_NONCONTIGUOUS,
+    EDGE_LINEAGE_NONCONTIGUOUS,
     EDGE_ARBITRARY
 } SimpleGraphEdgeType;
 
@@ -461,6 +481,9 @@ Geneology* geneology_complement(const Geneology* a, const Geneology* universe); 
 // =====================
 // These operations act on sets of nodes, indifferent to internal relationships.
 // Add declarations for any special set-level abstractions here.
+
+// Returns the inverse of a relationship type (e.g., parent->child becomes child->parent)
+int geneology_invert_relation(int relation_type);
 
 #ifdef __cplusplus
 }
