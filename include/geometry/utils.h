@@ -6,6 +6,7 @@ extern "C" {
 #endif
 
 #include <stddef.h>
+#include <stdint.h>
 #ifdef _WIN32
 #include <windows.h>
 typedef CRITICAL_SECTION node_mutex_t;
@@ -59,7 +60,45 @@ typedef struct Node {
     size_t num_exposures, cap_exposures;
 
     node_mutex_t mutex;
+
+    struct Emergence* emergence;
 } Node;
+
+// --- Emergence structure for node-level adaptation ---
+typedef struct Emergence Emergence;
+
+struct Emergence {
+    // Statistics
+    double activation_sum;
+    double activation_sq_sum;
+    size_t activation_count;
+    uint64_t last_global_step;
+    uint64_t last_timestamp;
+
+    // Thread lock for parallel split
+    node_mutex_t thread_lock;
+    int is_locked;
+
+    // Decision hooks
+    int (*should_split)(Emergence* self, Node* node);
+    int (*should_apoptose)(Emergence* self, Node* node);
+    int (*should_metastasize)(Emergence* self, Node* node);
+
+    // Action hooks
+    void (*split)(Emergence* self, Node* node);
+    void (*apoptose)(Emergence* self, Node* node);
+    void (*metastasize)(Emergence* self, Node* node);
+
+    // User data for custom policies
+    void* user_data;
+};
+
+Emergence* emergence_create(void);
+void emergence_destroy(Emergence* e);
+void emergence_lock(Emergence* e);
+void emergence_release(Emergence* e);
+void emergence_resolve(Emergence* e);
+void emergence_update(Emergence* e, Node* node, double activation, uint64_t global_step, uint64_t timestamp);
 
 // --- Geneology structure ---
 typedef struct Geneology Geneology;

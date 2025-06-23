@@ -522,4 +522,73 @@ void dag_add_manifest(Dag* dag, DagManifest* manifest) {
     if (dag->num_manifests == dag->cap_manifests) {
         size_t new_cap = dag->cap_manifests ? dag->cap_manifests * 2 : 4;
         dag->manifests = (DagManifest*)realloc(dag->manifests, new_cap * sizeof(DagManifest));
-        dag->cap_manifests = new_cap
+        dag->cap_manifests = new_cap;
+    }
+    dag->manifests[dag->num_manifests++] = *manifest;
+}
+
+// --- Emergence Implementation ---
+Emergence* emergence_create(void) {
+    Emergence* e = (Emergence*)calloc(1, sizeof(Emergence));
+#ifdef _WIN32
+    InitializeCriticalSection(&e->thread_lock);
+#else
+    pthread_mutex_init(&e->thread_lock, NULL);
+#endif
+    return e;
+}
+
+void emergence_destroy(Emergence* e) {
+    if (!e) return;
+#ifdef _WIN32
+    DeleteCriticalSection(&e->thread_lock);
+#else
+    pthread_mutex_destroy(&e->thread_lock);
+#endif
+    free(e);
+}
+
+void emergence_lock(Emergence* e) {
+    if (!e) return;
+#ifdef _WIN32
+    EnterCriticalSection(&e->thread_lock);
+#else
+    pthread_mutex_lock(&e->thread_lock);
+#endif
+    e->is_locked = 1;
+}
+
+void emergence_release(Emergence* e) {
+    if (!e) return;
+    e->is_locked = 0;
+#ifdef _WIN32
+    LeaveCriticalSection(&e->thread_lock);
+#else
+    pthread_mutex_unlock(&e->thread_lock);
+#endif
+}
+
+void emergence_resolve(Emergence* e) {
+    // Placeholder for lock resolution logic
+    if (!e) return;
+    // Could implement deadlock detection, etc.
+}
+
+void emergence_update(Emergence* e, Node* node, double activation, uint64_t global_step, uint64_t timestamp) {
+    if (!e) return;
+    e->activation_sum += activation;
+    e->activation_sq_sum += activation * activation;
+    e->activation_count++;
+    e->last_global_step = global_step;
+    e->last_timestamp = timestamp;
+    // Decision hooks
+    if (e->should_split && e->should_split(e, node)) {
+        if (e->split) e->split(e, node);
+    }
+    if (e->should_apoptose && e->should_apoptose(e, node)) {
+        if (e->apoptose) e->apoptose(e, node);
+    }
+    if (e->should_metastasize && e->should_metastasize(e, node)) {
+        if (e->metastasize) e->metastasize(e, node);
+    }
+}
