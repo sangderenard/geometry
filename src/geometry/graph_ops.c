@@ -15,6 +15,10 @@
 #include "geometry/graph_ops.h"
 #include <stddef.h>
 
+// Forward declarations for shared utilities
+static void common_sort(void* container, int (*cmp)(const Node*, const Node*));
+static void common_contiguous(void* container);
+
 // =====================
 // Node Graph Operations
 // =====================
@@ -133,8 +137,8 @@ static Node* geneology_shift(Node* node) { /* TODO */ return NULL; }
 static void geneology_unshift(Node* node, Node* child) { /* TODO */ }
 static Node* geneology_get(Node* node, size_t idx) { /* TODO */ return NULL; }
 static size_t geneology_size(Node* node) { /* TODO */ return 0; }
-static void geneology_sort(Node* node, int (*cmp)(const Node*, const Node*)) { common_sort((void*)node, cmp); }
-static Node* geneology_search(Node* node, int (*pred)(const Node*, void*), void* user) { /* TODO */ return NULL; }
+static void geneology_sort_ops(Node* node, int (*cmp)(const Node*, const Node*)) { common_sort((void*)node, cmp); }
+static Node* geneology_search_ops(Node* node, int (*pred)(const Node*, void*), void* user) { /* TODO */ return NULL; }
 static Node* geneology_left(Node* node) { /* TODO */ return NULL; }
 static Node* geneology_right(Node* node) { /* TODO */ return NULL; }
 static Node* geneology_up(Node* node) { /* TODO */ return NULL; }
@@ -150,8 +154,8 @@ const GraphOps GeneologyGraphOps = {
     geneology_unshift,
     geneology_get,
     geneology_size,
-    geneology_sort,
-    geneology_search,
+    geneology_sort_ops,
+    geneology_search_ops,
     geneology_left,
     geneology_right,
     geneology_up,
@@ -253,6 +257,47 @@ const GraphOps DagGraphOps = {
     dag_graphops_down,
     dag_graphops_slice,
     dag_graphops_stencil
+};
+
+// =====================
+// NeuralNetwork Graph Operations
+// =====================
+
+void neuralnetwork_add_dag(NeuralNetwork* nn, Dag* dag) { (void)nn; (void)dag; /* TODO */ }
+void neuralnetwork_remove_dag(NeuralNetwork* nn, Dag* dag) { (void)nn; (void)dag; /* TODO */ }
+Dag* neuralnetwork_get_dag(const NeuralNetwork* nn, size_t idx) { (void)nn; (void)idx; return NULL; }
+size_t neuralnetwork_num_dags(const NeuralNetwork* nn) { (void)nn; return 0; }
+
+static void nn_graphops_push(Node* node, Node* child) { /* TODO */ }
+static Node* nn_graphops_pop(Node* node) { /* TODO */ return NULL; }
+static Node* nn_graphops_shift(Node* node) { /* TODO */ return NULL; }
+static void nn_graphops_unshift(Node* node, Node* child) { /* TODO */ }
+static Node* nn_graphops_get(Node* node, size_t idx) { (void)idx; /* TODO */ return NULL; }
+static size_t nn_graphops_size(Node* node) { (void)node; /* TODO */ return 0; }
+static void nn_graphops_sort(Node* node, int (*cmp)(const Node*, const Node*)) { (void)node; (void)cmp; /* TODO */ }
+static Node* nn_graphops_search(Node* node, int (*pred)(const Node*, void*), void* user) { (void)node; (void)pred; (void)user; return NULL; }
+static Node* nn_graphops_left(Node* node) { (void)node; return NULL; }
+static Node* nn_graphops_right(Node* node) { (void)node; return NULL; }
+static Node* nn_graphops_up(Node* node) { (void)node; return NULL; }
+static Node* nn_graphops_down(Node* node) { (void)node; return NULL; }
+static void nn_graphops_slice(Node* node, size_t start, size_t end, Node** out) { (void)node; (void)start; (void)end; (void)out; }
+static void nn_graphops_stencil(Node* node, const size_t* indices, size_t count, Node** out) { (void)node; (void)indices; (void)count; (void)out; }
+
+const GraphOps NeuralNetworkGraphOps = {
+    nn_graphops_push,
+    nn_graphops_pop,
+    nn_graphops_shift,
+    nn_graphops_unshift,
+    nn_graphops_get,
+    nn_graphops_size,
+    nn_graphops_sort,
+    nn_graphops_search,
+    nn_graphops_left,
+    nn_graphops_right,
+    nn_graphops_up,
+    nn_graphops_down,
+    nn_graphops_slice,
+    nn_graphops_stencil
 };
 
 // =====================

@@ -517,9 +517,115 @@ void dag_destroy(Dag* dag) {
     free(dag->manifests);
     free(dag);
 }
-
 void dag_add_manifest(Dag* dag, DagManifest* manifest) {
+    if (!dag || !manifest) return;
     if (dag->num_manifests == dag->cap_manifests) {
         size_t new_cap = dag->cap_manifests ? dag->cap_manifests * 2 : 4;
-        dag->manifests = (DagManifest*)realloc(dag->manifests, new_cap * sizeof(DagManifest));
-        dag->cap_manifests = new_cap
+        DagManifest* tmp = (DagManifest*)realloc(dag->manifests, new_cap * sizeof(DagManifest));
+        if (!tmp) return;
+        dag->manifests = tmp;
+        dag->cap_manifests = new_cap;
+    }
+    dag->manifests[dag->num_manifests++] = *manifest;
+}
+
+size_t dag_num_manifests(const Dag* dag) {
+    return dag ? dag->num_manifests : 0;
+}
+
+DagManifest* dag_get_manifest(const Dag* dag, size_t idx) {
+    if (!dag || idx >= dag->num_manifests) return NULL;
+    return &dag->manifests[idx];
+}
+
+size_t dag_manifest_num_levels(const DagManifest* manifest) {
+    return manifest ? manifest->num_levels : 0;
+}
+
+DagManifestLevel* dag_manifest_get_level(const DagManifest* manifest, size_t level_idx) {
+    if (!manifest || level_idx >= manifest->num_levels) return NULL;
+    return &manifest->levels[level_idx];
+}
+
+size_t dag_level_num_mappings(const DagManifestLevel* level) {
+    return level ? level->num_mappings : 0;
+}
+
+DagManifestMapping* dag_level_get_mapping(const DagManifestLevel* level) {
+    return level ? level->mappings : NULL;
+}
+
+void dag_gather(const DagManifestMapping* mapping, void* out) {
+    (void)mapping;
+    (void)out;
+    /* TODO: gather data from inputs */
+}
+
+void dag_scatter(const DagManifestMapping* mapping, void* data) {
+    (void)mapping;
+    (void)data;
+    /* TODO: scatter data to outputs */
+}
+
+// --- NeuralNetwork implementation ---
+#include <string.h>
+
+NeuralNetwork* neuralnetwork_create(void) {
+    NeuralNetwork* nn = (NeuralNetwork*)calloc(1, sizeof(NeuralNetwork));
+    return nn;
+}
+
+void neuralnetwork_destroy(NeuralNetwork* nn) {
+    if (!nn) return;
+    for (size_t d = 0; d < nn->num_dags; ++d) {
+        dag_destroy(nn->dags[d]);
+        for (size_t s = 0; s < nn->num_steps[d]; ++s) {
+            free(nn->steps[d][s]);
+        }
+    }
+    free(nn);
+}
+
+void neuralnetwork_register_function(NeuralNetwork* nn, const char* name, NNForwardFn forward, NNBackwardFn backward) {
+    if (!nn || !name) return;
+    if (nn->function_repo.num_entries >= NN_MAX_FUNCTIONS) return;
+    NeuralNetworkFunctionEntry* e = &nn->function_repo.entries[nn->function_repo.num_entries++];
+    e->name = name;
+    e->forward = forward;
+    e->backward = backward;
+}
+
+void neuralnetwork_set_step_function(NeuralNetwork* nn, size_t dag_idx, size_t step_idx, const char* function_name, void* user_data) {
+    if (!nn || dag_idx >= nn->num_dags || step_idx >= NN_MAX_STEPS) return;
+    NeuralNetworkStep* step = nn->steps[dag_idx][step_idx];
+    if (!step) {
+        step = (NeuralNetworkStep*)calloc(1, sizeof(NeuralNetworkStep));
+        nn->steps[dag_idx][step_idx] = step;
+        if (step_idx >= nn->num_steps[dag_idx]) nn->num_steps[dag_idx] = step_idx + 1;
+    }
+    for (size_t i = 0; i < nn->function_repo.num_entries; ++i) {
+        NeuralNetworkFunctionEntry* e = &nn->function_repo.entries[i];
+        if (strcmp(e->name, function_name) == 0) {
+            step->forward = e->forward;
+            step->backward = e->backward;
+            step->user_data = user_data;
+            break;
+        }
+    }
+}
+
+void neuralnetwork_forward(NeuralNetwork* nn) {
+    (void)nn; // TODO
+}
+
+void neuralnetwork_backward(NeuralNetwork* nn) {
+    (void)nn; // TODO
+}
+
+void neuralnetwork_forwardstep(NeuralNetwork* nn, size_t dag_idx, size_t step_idx) {
+    (void)nn; (void)dag_idx; (void)step_idx; // TODO
+}
+
+void neuralnetwork_backwardstep(NeuralNetwork* nn, size_t dag_idx, size_t step_idx) {
+    (void)nn; (void)dag_idx; (void)step_idx; // TODO
+}
