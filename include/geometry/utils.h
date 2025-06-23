@@ -44,6 +44,9 @@ typedef struct {
 typedef struct Node {
     char* id;
     unsigned long long uid;
+    size_t activation_count;
+    double activation_sum;
+    double activation_sq_sum;
 
     NodeLink* forward_links;
     NodeLink* backward_links;
@@ -121,6 +124,9 @@ Node* geneology_search(Geneology* g, int (*pred)(const Node*, void*), void* user
 
 Node* node_create(void);
 void node_destroy(Node* node);
+Node* node_split(const Node* src);
+int node_should_split(Node* n);
+void node_record_activation(Node* n, double act);
 
 size_t node_add_relation(Node* node, int type, NodeForwardFn forward, NodeBackwardFn backward);
 NodeRelation* node_get_relation(const Node* node, size_t index);

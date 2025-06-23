@@ -182,12 +182,9 @@ Dag* dag_create(void);
 void dag_destroy(Dag* dag);
 
 /**
- * @brief Add a manifest (circuit) to the DAG.
- * @param manifest Array of Node* arrays (depth-major), each array is a layer of nodes.
- * @param depth Number of layers (depths) in the manifest.
- * @param widths Array of widths (number of nodes) for each depth.
+ * @brief Add a manifest to the DAG.
  */
-void dag_add_manifest(Dag* dag, Node*** manifest, size_t depth, size_t* widths);
+void dag_add_manifest(Dag* dag, DagManifest* manifest);
 
 /**
  * @brief Get the number of manifests in the DAG.
@@ -197,17 +194,17 @@ size_t dag_num_manifests(const Dag* dag);
 /**
  * @brief Get a manifest by index.
  */
-Node*** dag_get_manifest(const Dag* dag, size_t idx);
+DagManifest* dag_get_manifest(const Dag* dag, size_t idx);
 
 /**
- * @brief Get the depth (number of layers) of a manifest.
+ * @brief Get the number of levels in a manifest.
  */
-size_t dag_manifest_depth(const Dag* dag, size_t idx);
+size_t dag_manifest_num_levels(const DagManifest* manifest);
 
 /**
- * @brief Get the width (number of nodes) at a given depth in a manifest.
+ * @brief Get a level by index from a manifest.
  */
-size_t dag_manifest_width(const Dag* dag, size_t manifest_idx, size_t depth);
+DagManifestLevel* dag_manifest_get_level(const DagManifest* manifest, size_t level_idx);
 
 // DAG GraphOps (by manifest index, depth, and node index)
 void dag_push(Dag* dag, size_t manifest_idx, size_t depth, Node* node);
@@ -225,6 +222,26 @@ Node* dag_down(Dag* dag, size_t manifest_idx, size_t depth, size_t idx);
 void dag_slice(Dag* dag, size_t manifest_idx, size_t depth, size_t start, size_t end, Node** out);
 void dag_stencil(Dag* dag, size_t manifest_idx, size_t depth, const size_t* indices, size_t count, Node** out);
 void dag_contiguous(Dag* dag, size_t manifest_idx, size_t depth);
+
+// =====================
+// NeuralNetwork Graph Operations
+// =====================
+
+void neuralnetwork_add_dag(NeuralNetwork* nn, Dag* dag);
+void neuralnetwork_remove_dag(NeuralNetwork* nn, Dag* dag);
+Dag* neuralnetwork_get_dag(const NeuralNetwork* nn, size_t idx);
+size_t neuralnetwork_num_dags(const NeuralNetwork* nn);
+
+size_t dag_level_num_mappings(const DagManifestLevel* level);
+DagManifestMapping* dag_level_get_mapping(const DagManifestLevel* level);
+void dag_gather(const DagManifestMapping* mapping, void* out);
+void dag_scatter(const DagManifestMapping* mapping, void* data);
+
+extern const GraphOps NodeGraphOps;
+extern const GraphOps GeneologyGraphOps;
+extern const GraphOps SimpleGraphGraphOps;
+extern const GraphOps DagGraphOps;
+extern const GraphOps NeuralNetworkGraphOps;
 
 #ifdef __cplusplus
 }

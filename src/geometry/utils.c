@@ -517,15 +517,22 @@ void dag_destroy(Dag* dag) {
     free(dag->manifests);
     free(dag);
 }
-
 void dag_add_manifest(Dag* dag, DagManifest* manifest) {
+    if (!dag || !manifest) return;
     if (dag->num_manifests == dag->cap_manifests) {
         size_t new_cap = dag->cap_manifests ? dag->cap_manifests * 2 : 4;
+<<<<<<< HEAD
         dag->manifests = (DagManifest*)realloc(dag->manifests, new_cap * sizeof(DagManifest));
+=======
+        DagManifest* tmp = (DagManifest*)realloc(dag->manifests, new_cap * sizeof(DagManifest));
+        if (!tmp) return;
+        dag->manifests = tmp;
+>>>>>>> 695486de79d978425e2ef29b4a631e8ac124861c
         dag->cap_manifests = new_cap;
     }
     dag->manifests[dag->num_manifests++] = *manifest;
 }
+
 
 // --- Emergence Implementation ---
 Emergence* emergence_create(void) {
@@ -592,3 +599,248 @@ void emergence_update(Emergence* e, Node* node, double activation, uint64_t glob
         if (e->metastasize) e->metastasize(e, node);
     }
 }
+
+size_t dag_num_manifests(const Dag* dag) {
+    return dag ? dag->num_manifests : 0;
+}
+
+DagManifest* dag_get_manifest(const Dag* dag, size_t idx) {
+    if (!dag || idx >= dag->num_manifests) return NULL;
+    return &dag->manifests[idx];
+}
+
+size_t dag_manifest_num_levels(const DagManifest* manifest) {
+    return manifest ? manifest->num_levels : 0;
+}
+
+DagManifestLevel* dag_manifest_get_level(const DagManifest* manifest, size_t level_idx) {
+    if (!manifest || level_idx >= manifest->num_levels) return NULL;
+    return &manifest->levels[level_idx];
+}
+
+size_t dag_level_num_mappings(const DagManifestLevel* level) {
+    return level ? level->num_mappings : 0;
+}
+
+DagManifestMapping* dag_level_get_mapping(const DagManifestLevel* level) {
+    return level ? level->mappings : NULL;
+}
+
+void dag_gather(const DagManifestMapping* mapping, void* out) {
+    (void)mapping;
+    (void)out;
+    /* TODO: gather data from inputs */
+}
+
+void dag_scatter(const DagManifestMapping* mapping, void* data) {
+    (void)mapping;
+    (void)data;
+    /* TODO: scatter data to outputs */
+}
+
+// --- NeuralNetwork implementation ---
+#include <string.h>
+
+NeuralNetwork* neuralnetwork_create(void) {
+    NeuralNetwork* nn = (NeuralNetwork*)calloc(1, sizeof(NeuralNetwork));
+    return nn;
+}
+
+void neuralnetwork_destroy(NeuralNetwork* nn) {
+    if (!nn) return;
+    for (size_t d = 0; d < nn->num_dags; ++d) {
+        dag_destroy(nn->dags[d]);
+        for (size_t s = 0; s < nn->num_steps[d]; ++s) {
+            free(nn->steps[d][s]);
+        }
+    }
+    free(nn);
+}
+
+void neuralnetwork_register_function(NeuralNetwork* nn, const char* name, NNForwardFn forward, NNBackwardFn backward) {
+    if (!nn || !name) return;
+    if (nn->function_repo.num_entries >= NN_MAX_FUNCTIONS) return;
+    NeuralNetworkFunctionEntry* e = &nn->function_repo.entries[nn->function_repo.num_entries++];
+    e->name = name;
+    e->forward = forward;
+    e->backward = backward;
+}
+
+void neuralnetwork_set_step_function(NeuralNetwork* nn, size_t dag_idx, size_t step_idx, const char* function_name, void* user_data) {
+    if (!nn || dag_idx >= nn->num_dags || step_idx >= NN_MAX_STEPS) return;
+    NeuralNetworkStep* step = nn->steps[dag_idx][step_idx];
+    if (!step) {
+        step = (NeuralNetworkStep*)calloc(1, sizeof(NeuralNetworkStep));
+        nn->steps[dag_idx][step_idx] = step;
+        if (step_idx >= nn->num_steps[dag_idx]) nn->num_steps[dag_idx] = step_idx + 1;
+    }
+    for (size_t i = 0; i < nn->function_repo.num_entries; ++i) {
+        NeuralNetworkFunctionEntry* e = &nn->function_repo.entries[i];
+        if (strcmp(e->name, function_name) == 0) {
+            step->forward = e->forward;
+            step->backward = e->backward;
+            step->user_data = user_data;
+            break;
+        }
+    }
+}
+
+void neuralnetwork_forward(NeuralNetwork* nn) {
+    (void)nn; // TODO
+}
+
+void neuralnetwork_backward(NeuralNetwork* nn) {
+    (void)nn; // TODO
+}
+
+void neuralnetwork_forwardstep(NeuralNetwork* nn, size_t dag_idx, size_t step_idx) {
+    (void)nn; (void)dag_idx; (void)step_idx; // TODO
+}
+
+void neuralnetwork_backwardstep(NeuralNetwork* nn, size_t dag_idx, size_t step_idx) {
+    (void)nn; (void)dag_idx; (void)step_idx; // TODO
+}
+
+#include "geometry/utils.h"
+#include <stdlib.h>
+#include <string.h>
+#include <stdint.h>
+#ifdef _WIN32
+#include <windows.h>
+#else
+#include <pthread.h>
+#endif
+#include <stdbool.h>
+
+// === Utility ===
+static void* grow_array(void* array, size_t elem_size, size_t* cap) {
+    size_t new_cap = (*cap == 0) ? 4 : (*cap * 2);
+    void* new_arr = realloc(array, new_cap * elem_size);
+    if (new_arr) *cap = new_cap;
+    return new_arr;
+}
+
+// === Emergent Neural Node Structures ===
+
+Node* node_create(void) {
+    Node* n = (Node*)calloc(1, sizeof(Node));
+    static uint64_t counter = 1;
+    n->uid = counter++;
+    n->activation_count = 0;
+    n->activation_sum = 0.0;
+    n->activation_sq_sum = 0.0;
+#ifdef _WIN32
+    InitializeCriticalSection(&n->mutex);
+#else
+    pthread_mutex_init(&n->mutex, NULL);
+#endif
+    return n;
+}
+
+void node_destroy(Node* node) {
+    if (!node) return;
+#ifdef _WIN32
+    DeleteCriticalSection(&node->mutex);
+#else
+    pthread_mutex_destroy(&node->mutex);
+#endif
+    free(node->id);
+    free(node->relations);
+    if (node->features) {
+        for (size_t i = 0; i < node->num_features; ++i) {
+            free(node->features[i]);
+        }
+    }
+    free(node->features);
+    free(node->exposures);
+    free(node->forward_links);
+    free(node->backward_links);
+    free(node);
+}
+
+Node* node_split(const Node* src) {
+    if (!src) return NULL;
+    Node* n = node_create();
+    for (size_t i = 0; i < src->num_features; ++i)
+        node_add_feature(n, src->features[i]);
+    for (size_t i = 0; i < src->num_exposures; ++i)
+        node_add_exposure(n, src->exposures[i].produce, src->exposures[i].reverse);
+    for (size_t i = 0; i < src->num_relations; ++i)
+        node_add_relation_full(n, src->relations[i].type, src->relations[i].forward, src->relations[i].backward, src->relations[i].name, src->relations[i].context);
+    return n;
+}
+
+int node_should_split(Node* n) {
+    if (!n || n->activation_count < 10) return 0;
+    double mean = n->activation_sum / n->activation_count;
+    double variance = n->activation_sq_sum / n->activation_count - mean * mean;
+    return variance > 1.0;
+}
+
+void node_record_activation(Node* n, double act) {
+    if (!n) return;
+    n->activation_sum += act;
+    n->activation_sq_sum += act * act;
+    n->activation_count++;
+}
+
+// === Emergence Object ===
+
+Emergence* emergence_create(void) {
+    Emergence* e = (Emergence*)calloc(1, sizeof(Emergence));
+#ifdef _WIN32
+    InitializeCriticalSection(&e->thread_lock);
+#else
+    pthread_mutex_init(&e->thread_lock, NULL);
+#endif
+    return e;
+}
+
+void emergence_destroy(Emergence* e) {
+    if (!e) return;
+#ifdef _WIN32
+    DeleteCriticalSection(&e->thread_lock);
+#else
+    pthread_mutex_destroy(&e->thread_lock);
+#endif
+    free(e);
+}
+
+void emergence_lock(Emergence* e) {
+    if (!e) return;
+#ifdef _WIN32
+    EnterCriticalSection(&e->thread_lock);
+#else
+    pthread_mutex_lock(&e->thread_lock);
+#endif
+    e->is_locked = 1;
+}
+
+void emergence_release(Emergence* e) {
+    if (!e) return;
+    e->is_locked = 0;
+#ifdef _WIN32
+    LeaveCriticalSection(&e->thread_lock);
+#else
+    pthread_mutex_unlock(&e->thread_lock);
+#endif
+}
+
+void emergence_update(Emergence* e, Node* n, double activation, uint64_t step, uint64_t ts) {
+    if (!e || !n) return;
+    node_record_activation(n, activation);
+    e->last_global_step = step;
+    e->last_timestamp = ts;
+
+    if (e->should_split && e->should_split(e, n)) {
+        Node* new_node = node_split(n);
+        if (e->split) e->split(e, new_node);
+    }
+    if (e->should_apoptose && e->should_apoptose(e, n)) {
+        if (e->apoptose) e->apoptose(e, n);
+    }
+    if (e->should_metastasize && e->should_metastasize(e, n)) {
+        if (e->metastasize) e->metastasize(e, n);
+    }
+}
+
