@@ -5,8 +5,11 @@ set(CMAKE_CXX_STANDARD 17)
 
 include_directories(include third_party/eigen)
 
-file(GLOB SOURCES "src/*.cpp")
-add_library(vecdec ${SOURCES})
+file(GLOB_RECURSE CPP_SOURCES "src/*.cpp")
+list(FILTER CPP_SOURCES EXCLUDE REGEX "dec_toolkit_header.cpp$")
+file(GLOB_RECURSE C_SOURCES "src/*.c")
+add_library(vecdec ${CPP_SOURCES} ${C_SOURCES})
 
-add_executable(example examples/minimal.cpp)
-target_link_libraries(example vecdec)
+# Examples are optional; disable by default to avoid external deps
+# add_executable(example examples/minimal.cpp)
+# target_link_libraries(example vecdec)
