@@ -15,6 +15,8 @@ typedef CRITICAL_SECTION node_mutex_t;
 typedef pthread_mutex_t node_mutex_t;
 #endif
 
+#include "geometry/stencil.h"
+
 struct Node;
 
 typedef void (*NodeForwardFn)(struct Node* self, void* out);
@@ -40,6 +42,25 @@ typedef struct {
     struct Node* node;
     int relation;
 } NodeLink;
+
+// A label for a neighbor relationship (can be explicit or auto-generated)
+typedef struct NeighborLabel {
+    char* label;           // e.g. "parent", "child", "neighbor_0", etc.
+    size_t pole_index;     // Index in the stencil (if any)
+} NeighborLabel;
+
+// A neighbor entry: maps a label/pole to a neighbor node
+typedef struct NeighborEntry {
+    NeighborLabel label;
+    struct Node* neighbor;
+} NeighborEntry;
+
+// A flexible neighbor map for a node
+typedef struct NeighborMap {
+    NeighborEntry* entries;
+    size_t count, cap;
+    GeneralStencil* stencil; // The stencil defining the neighbor arrangement (optional)
+} NeighborMap;
 
 typedef struct Node {
     char* id;
@@ -83,6 +104,8 @@ typedef struct Node {
     node_mutex_t mutex;
 
     struct Emergence* emergence;
+
+    NeighborMap neighbor_map; // Flexible, labeled neighbor mapping
 } Node;
 
 // --- Emergence structure for node-level adaptation ---
@@ -181,6 +204,18 @@ void node_scatter_to_siblings(Node* node, void* data);
 void node_gather_from_siblings(Node* node, void* out);
 void node_scatter_to_descendants(Node* node, void* data);
 void node_gather_from_ancestors(Node* node, void* out);
+
+// --- Neighbor Map API ---
+// Attach a neighbor at a given pole (by index) with a label (explicit or auto-generated)
+int node_attach_neighbor(Node* node, Node* neighbor, size_t pole_index, const char* label);
+// Detach a neighbor by pole or label
+int node_detach_neighbor(Node* node, size_t pole_index);
+int node_detach_neighbor_by_label(Node* node, const char* label);
+// Query a neighbor by pole or label
+Node* node_get_neighbor(const Node* node, size_t pole_index);
+Node* node_get_neighbor_by_label(const Node* node, const char* label);
+// Ensure bidirectional link (or hold/drop if not possible)
+int node_ensure_bidirectional_neighbor(Node* node, Node* neighbor, size_t pole_index, const char* label, int require_bidirectional);
 
 // =====================
 // LOCKING POLICY AND DESIGN
@@ -355,7 +390,8 @@ typedef struct {
 typedef struct Dag Dag;
 
 struct Dag {
-    DagManifest* manifests;
+    DagManifest* manifests
+        DagManifest* manifests;
     size_t num_manifests, cap_manifests;
 };
 

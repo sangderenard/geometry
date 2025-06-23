@@ -864,3 +864,88 @@ void neuralnetwork_backwardstep(NeuralNetwork* nn, size_t dag_idx, size_t step_i
     (void)nn; (void)dag_idx; (void)step_idx; // TODO
 }
 
+// --- Stencil-Informed Neighbor Mapping Implementation ---
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
+static void neighbor_map_grow(NeighborMap* map) {
+    if (map->count == map->cap) {
+        size_t new_cap = map->cap ? map->cap * 2 : 8;
+        map->entries = (NeighborEntry*)realloc(map->entries, new_cap * sizeof(NeighborEntry));
+        map->cap = new_cap;
+    }
+}
+
+int node_attach_neighbor(Node* node, Node* neighbor, size_t pole_index, const char* label) {
+    if (!node || !neighbor) return 0;
+    neighbor_map_grow(&node->neighbor_map);
+    NeighborEntry* entry = &node->neighbor_map.entries[node->neighbor_map.count++];
+    entry->neighbor = neighbor;
+    entry->label.label = label ? strdup(label) : NULL;
+    entry->label.pole_index = pole_index;
+    return 1;
+}
+
+int node_detach_neighbor(Node* node, size_t pole_index) {
+    if (!node) return 0;
+    for (size_t i = 0; i < node->neighbor_map.count; ++i) {
+        if (node->neighbor_map.entries[i].label.pole_index == pole_index) {
+            free(node->neighbor_map.entries[i].label.label);
+            node->neighbor_map.entries[i] = node->neighbor_map.entries[node->neighbor_map.count - 1];
+            node->neighbor_map.count--;
+            return 1;
+        }
+    }
+    return 0;
+}
+
+int node_detach_neighbor_by_label(Node* node, const char* label) {
+    if (!node || !label) return 0;
+    for (size_t i = 0; i < node->neighbor_map.count; ++i) {
+        if (node->neighbor_map.entries[i].label.label && strcmp(node->neighbor_map.entries[i].label.label, label) == 0) {
+            free(node->neighbor_map.entries[i].label.label);
+            node->neighbor_map.entries[i] = node->neighbor_map.entries[node->neighbor_map.count - 1];
+            node->neighbor_map.count--;
+            return 1;
+        }
+    }
+    return 0;
+}
+
+Node* node_get_neighbor(const Node* node, size_t pole_index) {
+    if (!node) return NULL;
+    for (size_t i = 0; i < node->neighbor_map.count; ++i) {
+        if (node->neighbor_map.entries[i].label.pole_index == pole_index)
+            return node->neighbor_map.entries[i].neighbor;
+    }
+    return NULL;
+}
+
+Node* node_get_neighbor_by_label(const Node* node, const char* label) {
+    if (!node || !label) return NULL;
+    for (size_t i = 0; i < node->neighbor_map.count; ++i) {
+        if (node->neighbor_map.entries[i].label.label && strcmp(node->neighbor_map.entries[i].label.label, label) == 0)
+            return node->neighbor_map.entries[i].neighbor;
+    }
+    return NULL;
+}
+
+int node_ensure_bidirectional_neighbor(Node* node, Node* neighbor, size_t pole_index, const char* label, int require_bidirectional) {
+    if (!node_attach_neighbor(node, neighbor, pole_index, label)) return 0;
+    if (require_bidirectional) {
+        // Attach reciprocal link if not already present
+        int found = 0;
+        for (size_t i = 0; i < neighbor->neighbor_map.count; ++i) {
+            if (neighbor->neighbor_map.entries[i].neighbor == node) { found = 1; break; }
+        }
+        if (!found) {
+            // Auto-label reciprocal if not provided
+            char auto_label[64];
+            snprintf(auto_label, sizeof(auto_label), "recip_%zu", pole_index);
+            node_attach_neighbor(neighbor, node, pole_index, label ? auto_label : NULL);
+        }
+    }
+    return 1;
+}
+
