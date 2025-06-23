@@ -247,6 +247,39 @@ size_t node_add_bidirectional_link(Node* a, Node* b, int relation) {
     return idx1;
 }
 
+// --- Adaptive Node Operations ---
+
+Node* node_split(const Node* src) {
+    if (!src) return NULL;
+    Node* n = node_create();
+    for (size_t i = 0; i < src->num_features; ++i)
+        node_add_feature(n, src->features[i]);
+    for (size_t i = 0; i < src->num_exposures; ++i)
+        node_add_exposure(n, src->exposures[i].produce, src->exposures[i].reverse);
+    for (size_t i = 0; i < src->num_relations; ++i)
+        node_add_relation_full(n,
+                              src->relations[i].type,
+                              src->relations[i].forward,
+                              src->relations[i].backward,
+                              src->relations[i].name,
+                              src->relations[i].context);
+    return n;
+}
+
+int node_should_split(Node* n) {
+    if (!n || n->activation_count < 10) return 0;
+    double mean = n->activation_sum / n->activation_count;
+    double variance = n->activation_sq_sum / n->activation_count - mean * mean;
+    return variance > 1.0;
+}
+
+void node_record_activation(Node* n, double act) {
+    if (!n) return;
+    n->activation_sum += act;
+    n->activation_sq_sum += act * act;
+    n->activation_count++;
+}
+
 // === DAG Traversal Utilities ===
 
 void node_for_each_forward(Node* node, NodeVisitFn visit, void* user) {
@@ -521,13 +554,9 @@ void dag_add_manifest(Dag* dag, DagManifest* manifest) {
     if (!dag || !manifest) return;
     if (dag->num_manifests == dag->cap_manifests) {
         size_t new_cap = dag->cap_manifests ? dag->cap_manifests * 2 : 4;
-<<<<<<< HEAD
-        dag->manifests = (DagManifest*)realloc(dag->manifests, new_cap * sizeof(DagManifest));
-=======
         DagManifest* tmp = (DagManifest*)realloc(dag->manifests, new_cap * sizeof(DagManifest));
         if (!tmp) return;
         dag->manifests = tmp;
->>>>>>> 695486de79d978425e2ef29b4a631e8ac124861c
         dag->cap_manifests = new_cap;
     }
     dag->manifests[dag->num_manifests++] = *manifest;
@@ -582,15 +611,14 @@ void emergence_resolve(Emergence* e) {
 }
 
 void emergence_update(Emergence* e, Node* node, double activation, uint64_t global_step, uint64_t timestamp) {
-    if (!e) return;
-    e->activation_sum += activation;
-    e->activation_sq_sum += activation * activation;
-    e->activation_count++;
+    if (!e || !node) return;
+    node_record_activation(node, activation);
     e->last_global_step = global_step;
     e->last_timestamp = timestamp;
-    // Decision hooks
+
     if (e->should_split && e->should_split(e, node)) {
-        if (e->split) e->split(e, node);
+        Node* new_node = node_split(node);
+        if (e->split) e->split(e, new_node);
     }
     if (e->should_apoptose && e->should_apoptose(e, node)) {
         if (e->apoptose) e->apoptose(e, node);
@@ -699,148 +727,5 @@ void neuralnetwork_forwardstep(NeuralNetwork* nn, size_t dag_idx, size_t step_id
 
 void neuralnetwork_backwardstep(NeuralNetwork* nn, size_t dag_idx, size_t step_idx) {
     (void)nn; (void)dag_idx; (void)step_idx; // TODO
-}
-
-#include "geometry/utils.h"
-#include <stdlib.h>
-#include <string.h>
-#include <stdint.h>
-#ifdef _WIN32
-#include <windows.h>
-#else
-#include <pthread.h>
-#endif
-#include <stdbool.h>
-
-// === Utility ===
-static void* grow_array(void* array, size_t elem_size, size_t* cap) {
-    size_t new_cap = (*cap == 0) ? 4 : (*cap * 2);
-    void* new_arr = realloc(array, new_cap * elem_size);
-    if (new_arr) *cap = new_cap;
-    return new_arr;
-}
-
-// === Emergent Neural Node Structures ===
-
-Node* node_create(void) {
-    Node* n = (Node*)calloc(1, sizeof(Node));
-    static uint64_t counter = 1;
-    n->uid = counter++;
-    n->activation_count = 0;
-    n->activation_sum = 0.0;
-    n->activation_sq_sum = 0.0;
-#ifdef _WIN32
-    InitializeCriticalSection(&n->mutex);
-#else
-    pthread_mutex_init(&n->mutex, NULL);
-#endif
-    return n;
-}
-
-void node_destroy(Node* node) {
-    if (!node) return;
-#ifdef _WIN32
-    DeleteCriticalSection(&node->mutex);
-#else
-    pthread_mutex_destroy(&node->mutex);
-#endif
-    free(node->id);
-    free(node->relations);
-    if (node->features) {
-        for (size_t i = 0; i < node->num_features; ++i) {
-            free(node->features[i]);
-        }
-    }
-    free(node->features);
-    free(node->exposures);
-    free(node->forward_links);
-    free(node->backward_links);
-    free(node);
-}
-
-Node* node_split(const Node* src) {
-    if (!src) return NULL;
-    Node* n = node_create();
-    for (size_t i = 0; i < src->num_features; ++i)
-        node_add_feature(n, src->features[i]);
-    for (size_t i = 0; i < src->num_exposures; ++i)
-        node_add_exposure(n, src->exposures[i].produce, src->exposures[i].reverse);
-    for (size_t i = 0; i < src->num_relations; ++i)
-        node_add_relation_full(n, src->relations[i].type, src->relations[i].forward, src->relations[i].backward, src->relations[i].name, src->relations[i].context);
-    return n;
-}
-
-int node_should_split(Node* n) {
-    if (!n || n->activation_count < 10) return 0;
-    double mean = n->activation_sum / n->activation_count;
-    double variance = n->activation_sq_sum / n->activation_count - mean * mean;
-    return variance > 1.0;
-}
-
-void node_record_activation(Node* n, double act) {
-    if (!n) return;
-    n->activation_sum += act;
-    n->activation_sq_sum += act * act;
-    n->activation_count++;
-}
-
-// === Emergence Object ===
-
-Emergence* emergence_create(void) {
-    Emergence* e = (Emergence*)calloc(1, sizeof(Emergence));
-#ifdef _WIN32
-    InitializeCriticalSection(&e->thread_lock);
-#else
-    pthread_mutex_init(&e->thread_lock, NULL);
-#endif
-    return e;
-}
-
-void emergence_destroy(Emergence* e) {
-    if (!e) return;
-#ifdef _WIN32
-    DeleteCriticalSection(&e->thread_lock);
-#else
-    pthread_mutex_destroy(&e->thread_lock);
-#endif
-    free(e);
-}
-
-void emergence_lock(Emergence* e) {
-    if (!e) return;
-#ifdef _WIN32
-    EnterCriticalSection(&e->thread_lock);
-#else
-    pthread_mutex_lock(&e->thread_lock);
-#endif
-    e->is_locked = 1;
-}
-
-void emergence_release(Emergence* e) {
-    if (!e) return;
-    e->is_locked = 0;
-#ifdef _WIN32
-    LeaveCriticalSection(&e->thread_lock);
-#else
-    pthread_mutex_unlock(&e->thread_lock);
-#endif
-}
-
-void emergence_update(Emergence* e, Node* n, double activation, uint64_t step, uint64_t ts) {
-    if (!e || !n) return;
-    node_record_activation(n, activation);
-    e->last_global_step = step;
-    e->last_timestamp = ts;
-
-    if (e->should_split && e->should_split(e, n)) {
-        Node* new_node = node_split(n);
-        if (e->split) e->split(e, new_node);
-    }
-    if (e->should_apoptose && e->should_apoptose(e, n)) {
-        if (e->apoptose) e->apoptose(e, n);
-    }
-    if (e->should_metastasize && e->should_metastasize(e, n)) {
-        if (e->metastasize) e->metastasize(e, n);
-    }
 }
 
