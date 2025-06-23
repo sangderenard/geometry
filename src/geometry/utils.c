@@ -489,3 +489,37 @@ void simplegraph_backward(SimpleGraph* graph) {
         }
     }
 }
+
+// --- DAG Manifest Structures Implementation ---
+#include <stdlib.h>
+#include <string.h>
+
+Dag* dag_create(void) {
+    Dag* dag = (Dag*)calloc(1, sizeof(Dag));
+    return dag;
+}
+
+void dag_destroy(Dag* dag) {
+    if (!dag) return;
+    for (size_t i = 0; i < dag->num_manifests; ++i) {
+        DagManifest* manifest = &dag->manifests[i];
+        for (size_t l = 0; l < manifest->num_levels; ++l) {
+            DagManifestLevel* level = &manifest->levels[l];
+            for (size_t m = 0; m < level->num_mappings; ++m) {
+                DagManifestMapping* mapping = &level->mappings[m];
+                free(mapping->inputs);
+                free(mapping->outputs);
+            }
+            free(level->mappings);
+        }
+        free(manifest->levels);
+    }
+    free(dag->manifests);
+    free(dag);
+}
+
+void dag_add_manifest(Dag* dag, DagManifest* manifest) {
+    if (dag->num_manifests == dag->cap_manifests) {
+        size_t new_cap = dag->cap_manifests ? dag->cap_manifests * 2 : 4;
+        dag->manifests = (DagManifest*)realloc(dag->manifests, new_cap * sizeof(DagManifest));
+        dag->cap_manifests = new_cap

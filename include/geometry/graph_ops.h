@@ -167,6 +167,65 @@ void simplegraph_find_by_edge_type(const SimpleGraph* graph, SimpleGraphEdgeType
  */
 void simplegraph_extract_slice_2d(const SimpleGraph* graph, const Node* root, size_t gen_start, size_t gen_end, size_t sib_start, size_t sib_end, Node** out, size_t* out_count);
 
+// =====================
+// DAG Graph Operations
+// =====================
+
+/**
+ * @brief Create a new DAG container.
+ */
+Dag* dag_create(void);
+
+/**
+ * @brief Destroy a DAG container.
+ */
+void dag_destroy(Dag* dag);
+
+/**
+ * @brief Add a manifest (circuit) to the DAG.
+ * @param manifest Array of Node* arrays (depth-major), each array is a layer of nodes.
+ * @param depth Number of layers (depths) in the manifest.
+ * @param widths Array of widths (number of nodes) for each depth.
+ */
+void dag_add_manifest(Dag* dag, Node*** manifest, size_t depth, size_t* widths);
+
+/**
+ * @brief Get the number of manifests in the DAG.
+ */
+size_t dag_num_manifests(const Dag* dag);
+
+/**
+ * @brief Get a manifest by index.
+ */
+Node*** dag_get_manifest(const Dag* dag, size_t idx);
+
+/**
+ * @brief Get the depth (number of layers) of a manifest.
+ */
+size_t dag_manifest_depth(const Dag* dag, size_t idx);
+
+/**
+ * @brief Get the width (number of nodes) at a given depth in a manifest.
+ */
+size_t dag_manifest_width(const Dag* dag, size_t manifest_idx, size_t depth);
+
+// DAG GraphOps (by manifest index, depth, and node index)
+void dag_push(Dag* dag, size_t manifest_idx, size_t depth, Node* node);
+Node* dag_pop(Dag* dag, size_t manifest_idx, size_t depth);
+Node* dag_shift(Dag* dag, size_t manifest_idx, size_t depth);
+void dag_unshift(Dag* dag, size_t manifest_idx, size_t depth, Node* node);
+Node* dag_get(Dag* dag, size_t manifest_idx, size_t depth, size_t idx);
+size_t dag_size(Dag* dag, size_t manifest_idx, size_t depth);
+void dag_sort(Dag* dag, size_t manifest_idx, size_t depth, int (*cmp)(const Node*, const Node*));
+Node* dag_search(Dag* dag, size_t manifest_idx, size_t depth, int (*pred)(const Node*, void*), void* user);
+Node* dag_left(Dag* dag, size_t manifest_idx, size_t depth, size_t idx);
+Node* dag_right(Dag* dag, size_t manifest_idx, size_t depth, size_t idx);
+Node* dag_up(Dag* dag, size_t manifest_idx, size_t depth, size_t idx);
+Node* dag_down(Dag* dag, size_t manifest_idx, size_t depth, size_t idx);
+void dag_slice(Dag* dag, size_t manifest_idx, size_t depth, size_t start, size_t end, Node** out);
+void dag_stencil(Dag* dag, size_t manifest_idx, size_t depth, const size_t* indices, size_t count, Node** out);
+void dag_contiguous(Dag* dag, size_t manifest_idx, size_t depth);
+
 #ifdef __cplusplus
 }
 #endif

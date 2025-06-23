@@ -158,6 +158,129 @@ void* simplegraph_get_feature(SimpleGraph* graph, Node* node, const char* featur
 void simplegraph_forward(SimpleGraph* graph);
 void simplegraph_backward(SimpleGraph* graph);
 
+// --- DAG Manifest Structures ---
+
+// A mapping from a set of input nodes to a set of output nodes at a given level
+typedef struct {
+    Node** inputs;
+    size_t num_inputs;
+    Node** outputs;
+    size_t num_outputs;
+} DagManifestMapping;
+
+// A level in the manifest: an array of mappings (convergences/divergences)
+typedef struct {
+    DagManifestMapping* mappings;
+    size_t num_mappings;
+    int level_index; // can be negative or positive
+} DagManifestLevel;
+
+// A manifest: an array of levels (ordered by causal index)
+typedef struct {
+    DagManifestLevel* levels;
+    size_t num_levels;
+} DagManifest;
+
+// The DAG structure: an array of manifests (multiple circuits/views)
+typedef struct Dag Dag;
+
+struct Dag {
+    DagManifest* manifests;
+    size_t num_manifests, cap_manifests;
+};
+
+// Manifest management
+Dag* dag_create(void);
+void dag_destroy(Dag* dag);
+void dag_add_manifest(Dag* dag, DagManifest* manifest);
+size_t dag_num_manifests(const Dag* dag);
+DagManifest* dag_get_manifest(const Dag* dag, size_t idx);
+size_t dag_manifest_num_levels(const DagManifest* manifest);
+DagManifestLevel* dag_manifest_get_level(const DagManifest* manifest, size_t level_idx);
+size_t dag_level_num_mappings(const DagManifestLevel* level);
+DagManifestMapping* dag_level_get_mapping(const DagManifestLevel* level);
+void dag_gather(const DagManifestMapping* mapping, void* out);
+void dag_scatter(const DagManifestMapping* mapping, void* data);
+
+// --- NeuralNetwork structure ---
+
+// Forward/backward function signatures for a mapping step
+typedef void (*NNForwardFn)(Node** inputs, size_t num_inputs, Node** outputs, size_t num_outputs, void* user);
+typedef void (*NNBackwardFn)(Node** inputs, size_t num_inputs, Node** outputs, size_t num_outputs, void* user);
+
+// A mapping step in the network (corresponds to a DagManifestMapping, but with hooks)
+typedef struct {
+    DagManifestMapping* mapping;
+    NNForwardFn forward;
+    NNBackwardFn backward;
+    void* user_data; // e.g. activation/normalization params
+} NeuralNetworkStep;
+
+// A repository of available functions for mapping steps
+#define NN_MAX_FUNCTIONS 32
+
+typedef struct {
+    const char* name;
+    NNForwardFn forward;
+    NNBackwardFn backward;
+} NeuralNetworkFunctionEntry;
+
+typedef struct {
+    NeuralNetworkFunctionEntry entries[NN_MAX_FUNCTIONS];
+    size_t num_entries;
+} NeuralNetworkFunctionRepo;
+
+// The neural network object: an array of DAGs, and steps for each DAG
+#define NN_MAX_DAGS 8
+#define NN_MAX_STEPS 256
+
+typedef struct {
+    Dag* dags[NN_MAX_DAGS];
+    size_t num_dags;
+    NeuralNetworkStep* steps[NN_MAX_DAGS][NN_MAX_STEPS];
+    size_t num_steps[NN_MAX_DAGS];
+    NeuralNetworkFunctionRepo function_repo;
+} NeuralNetwork;
+
+// Neural network management
+NeuralNetwork* neuralnetwork_create(void);
+void neuralnetwork_destroy(NeuralNetwork* nn);
+
+// Register a function in the repo
+void neuralnetwork_register_function(NeuralNetwork* nn, const char* name, NNForwardFn forward, NNBackwardFn backward);
+
+// Attach a function to a step
+void neuralnetwork_set_step_function(NeuralNetwork* nn, size_t dag_idx, size_t step_idx, const char* function_name, void* user_data);
+
+// Forward/backward wrappers
+void neuralnetwork_forward(NeuralNetwork* nn);
+void neuralnetwork_backward(NeuralNetwork* nn);
+
+// Step-level forward/backward
+void neuralnetwork_forwardstep(NeuralNetwork* nn, size_t dag_idx, size_t step_idx);
+void neuralnetwork_backwardstep(NeuralNetwork* nn, size_t dag_idx, size_t step_idx);
+
+/*
+Diagram:
+
+NeuralNetwork
+  |-- dags[]: Dag
+  |-- steps[dag][step]: NeuralNetworkStep
+  |-- function_repo: {name, forward, backward}
+
+Each NeuralNetworkStep:
+  - mapping: DagManifestMapping (inputs/outputs)
+  - forward/backward: function pointers (activation, normalization, etc)
+  - user_data: params for the function
+
+Execution:
+  - neuralnetwork_forward: for each dag, for each step, call step->forward(inputs, outputs, user_data)
+  - neuralnetwork_backward: for each dag, for each step (reverse), call step->backward(...)
+
+Data:
+  - Node features (Eigen/ONNX tensors) are used for all data movement and computation
+*/
+
 #ifdef __cplusplus
 }
 #endif

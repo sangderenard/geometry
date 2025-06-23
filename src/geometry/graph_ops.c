@@ -218,6 +218,44 @@ const GraphOps SimpleGraphGraphOps = {
 };
 
 // =====================
+// DAG Graph Operations
+// =====================
+
+// DAG GraphOps Table (manifest/depth aware)
+static void dag_graphops_push(Node* node, Node* child) { /* TODO: Use dag_push with manifest/depth from node context */ }
+static Node* dag_graphops_pop(Node* node) { /* TODO */ return NULL; }
+static Node* dag_graphops_shift(Node* node) { /* TODO */ return NULL; }
+static void dag_graphops_unshift(Node* node, Node* child) { /* TODO */ }
+static Node* dag_graphops_get(Node* node, size_t idx) { /* TODO */ return NULL; }
+static size_t dag_graphops_size(Node* node) { /* TODO */ return 0; }
+static void dag_graphops_sort(Node* node, int (*cmp)(const Node*, const Node*)) { /* TODO */ }
+static Node* dag_graphops_search(Node* node, int (*pred)(const Node*, void*), void* user) { /* TODO */ return NULL; }
+static Node* dag_graphops_left(Node* node) { /* TODO */ return NULL; }
+static Node* dag_graphops_right(Node* node) { /* TODO */ return NULL; }
+static Node* dag_graphops_up(Node* node) { /* TODO */ return NULL; }
+static Node* dag_graphops_down(Node* node) { /* TODO */ return NULL; }
+static void dag_graphops_slice(Node* node, size_t start, size_t end, Node** out) { /* TODO */ }
+static void dag_graphops_stencil(Node* node, const size_t* indices, size_t count, Node** out) { /* TODO */ }
+static void dag_graphops_contiguous(Node* node) { /* TODO */ }
+
+const GraphOps DagGraphOps = {
+    dag_graphops_push,
+    dag_graphops_pop,
+    dag_graphops_shift,
+    dag_graphops_unshift,
+    dag_graphops_get,
+    dag_graphops_size,
+    dag_graphops_sort,
+    dag_graphops_search,
+    dag_graphops_left,
+    dag_graphops_right,
+    dag_graphops_up,
+    dag_graphops_down,
+    dag_graphops_slice,
+    dag_graphops_stencil
+};
+
+// =====================
 // Common Sort and Contiguous Utilities
 // =====================
 
