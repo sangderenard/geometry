@@ -10,16 +10,18 @@ extern "C" {
 struct Node;
 
 typedef void (*NodeForwardFn)(struct Node* self, void* out);
-typedef void (*NodeBackwardFn)(struct Node* self, const void* grad);
+typedef void (*NodeBackwardFn)(struct Node* self, void* grad);
 
 typedef struct {
     int type;
     NodeForwardFn forward;
     NodeBackwardFn backward;
+    char* name;
+    void* context;
 } NodeRelation;
 
 typedef void (*NodeProduceFn)(struct Node* self, void* product);
-typedef void (*NodeReverseFn)(struct Node* self, const void* product);
+typedef void (*NodeReverseFn)(struct Node* self, void* product);
 
 typedef struct {
     NodeProduceFn produce;
@@ -32,24 +34,22 @@ typedef struct {
 } NodeLink;
 
 typedef struct Node {
-    NodeRelation* relations;
-    size_t num_relations;
-    size_t cap_relations;
-
-    char** features;
-    size_t num_features;
-    size_t cap_features;
-
-    NodeExposure* exposures;
-    size_t num_exposures;
-    size_t cap_exposures;
+    char* id;
+    unsigned long long uid;
 
     NodeLink* forward_links;
-    size_t num_forward_links;
-    size_t cap_forward_links;
     NodeLink* backward_links;
-    size_t num_backward_links;
-    size_t cap_backward_links;
+    size_t num_forward_links, cap_forward_links;
+    size_t num_backward_links, cap_backward_links;
+
+    NodeRelation* relations;
+    size_t num_relations, cap_relations;
+
+    char** features;
+    size_t num_features, cap_features;
+
+    NodeExposure* exposures;
+    size_t num_exposures, cap_exposures;
 } Node;
 
 Node* node_create(void);

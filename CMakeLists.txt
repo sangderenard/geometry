@@ -13,3 +13,8 @@ add_library(vecdec ${CPP_SOURCES} ${C_SOURCES})
 # Examples are optional; disable by default to avoid external deps
 # add_executable(example examples/minimal.cpp)
 # target_link_libraries(example vecdec)
+
+enable_testing()
+add_executable(utils_test tests/utils_test.c)
+target_link_libraries(utils_test vecdec)
+add_test(NAME utils_test COMMAND utils_test)
