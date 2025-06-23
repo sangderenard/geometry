@@ -1,0 +1,1 @@
+// GranularDomain class declaration

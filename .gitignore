@@ -1,0 +1,11 @@
+build/
+*.o
+*.obj
+*.so
+*.dll
+*.dylib
+*.exe
+*.pyc
+__pycache__/
+.vscode/
+.idea/
