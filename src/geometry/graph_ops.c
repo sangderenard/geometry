@@ -1,17 +1,3 @@
-//
-// AGENT GUIDANCE
-//
-// Agents: When contributing to this file, prioritize implementing the simplest, most standard function that remains unimplemented.
-//
-// - Reference the Node and feature structures in utils.h to understand the linked structure: nodes are connected by explicit pointers to their neighbors (forward_links, backward_links, etc.).
-// - These are NOT array-based containers; all traversal and manipulation should use the pointer-based links.
-// - The contiguous() function is defined for each level; its purpose is to reorder the structure's data into a fresh contiguous block sized by powers of 2.
-// - Node features (by which sorting or batch operations are performed) are expected to be Eigen or ONNX tensors, with a batch dimension. When implementing sort or batch operations, use this convention.
-// - Always prefer clarity and correctness, and consult utils.h for canonical access patterns.
-//
-// Thank you for helping keep this codebase robust and agent-friendly!
-//
-
 #include "geometry/graph_ops.h"
 #include <stddef.h>
 
@@ -417,6 +403,11 @@ const GraphOps NeuralNetworkGraphOps = {
     nn_graphops_slice,
     nn_graphops_stencil
 };
+
+// =====================
+// Special Set-Level Operations Placeholder
+// =====================
+// Add definitions for any special set-level abstractions here.
 
 // =====================
 // Common Sort and Contiguous Utilities

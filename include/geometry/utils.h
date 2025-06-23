@@ -431,6 +431,37 @@ Data:
   - Node features (Eigen/ONNX tensors) are used for all data movement and computation
 */
 
+// =====================
+// Node Operator Overrides (Declarations Only)
+// =====================
+// Feature-wise arithmetic: add, subtract, multiply, divide, etc.
+Node* node_add(const Node* a, const Node* b);      // a + b (feature-wise)
+Node* node_sub(const Node* a, const Node* b);      // a - b
+Node* node_mul(const Node* a, const Node* b);      // a * b
+Node* node_div(const Node* a, const Node* b);      // a / b
+// Scalar versions
+Node* node_add_scalar(const Node* a, double s);    // a + s
+Node* node_mul_scalar(const Node* a, double s);    // a * s
+// ...add more as needed
+
+// =====================
+// Geneology Operator Overrides (Declarations Only)
+// =====================
+// Set-theoretic operations: union, intersection, difference, etc.
+Geneology* geneology_union(const Geneology* a, const Geneology* b);           // a | b
+Geneology* geneology_intersection(const Geneology* a, const Geneology* b);    // a & b
+Geneology* geneology_difference(const Geneology* a, const Geneology* b);      // a - b
+// Special set-level operations (no direct operator analog)
+Geneology* geneology_symmetric_difference(const Geneology* a, const Geneology* b); // a ? b
+Geneology* geneology_complement(const Geneology* a, const Geneology* universe);    // ~a (relative to universe)
+// ...add more as needed
+
+// =====================
+// Special Set-Level Operations Placeholder
+// =====================
+// These operations act on sets of nodes, indifferent to internal relationships.
+// Add declarations for any special set-level abstractions here.
+
 #ifdef __cplusplus
 }
 #endif

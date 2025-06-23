@@ -54,6 +54,30 @@ typedef struct {
 } GraphOps;
 
 // =====================
+// Node Operator Overrides (Declarations Only)
+// =====================
+Node* node_add(const Node* a, const Node* b);
+Node* node_sub(const Node* a, const Node* b);
+Node* node_mul(const Node* a, const Node* b);
+Node* node_div(const Node* a, const Node* b);
+Node* node_add_scalar(const Node* a, double s);
+Node* node_mul_scalar(const Node* a, double s);
+
+// =====================
+// Geneology Operator Overrides (Declarations Only)
+// =====================
+Geneology* geneology_union(const Geneology* a, const Geneology* b);
+Geneology* geneology_intersection(const Geneology* a, const Geneology* b);
+Geneology* geneology_difference(const Geneology* a, const Geneology* b);
+Geneology* geneology_symmetric_difference(const Geneology* a, const Geneology* b);
+Geneology* geneology_complement(const Geneology* a, const Geneology* universe);
+
+// =====================
+// Special Set-Level Operations Placeholder
+// =====================
+// Add declarations for any special set-level abstractions here.
+
+// =====================
 // Node Graph Operations
 // =====================
 
