@@ -13,57 +13,7 @@ static void* grow_array(void* array, size_t elem_size, size_t* cap) {
 
 // === Node Data Structures ===
 
-typedef void (*NodeForwardFn)(struct Node*, void*);
-typedef void (*NodeBackwardFn)(struct Node*, void*);
-typedef void (*NodeProduceFn)(struct Node*, void*);
-typedef void (*NodeReverseFn)(struct Node*, void*);
-typedef void (*NodeVisitFn)(struct Node*, int, void*);
-
-// A relation defines the behavior between connected nodes.
-typedef struct {
-    int type;
-    NodeForwardFn forward;
-    NodeBackwardFn backward;
-    char* name;              // Optional name for debugging
-    void* context;           // Optional user-defined state
-} NodeRelation;
-
-// A node link identifies a connection and its associated relation.
-typedef struct {
-    struct Node* node;
-    int relation;
-} NodeLink;
-
-// A public exposure defines external functionality.
-typedef struct {
-    NodeProduceFn produce;
-    NodeReverseFn reverse;
-} NodeExposure;
-
-// Core node structure.
-typedef struct Node {
-    // Identity
-    char* id;
-    uint64_t uid;
-
-    // DAG Topology
-    NodeLink* forward_links;
-    NodeLink* backward_links;
-    size_t num_forward_links, cap_forward_links;
-    size_t num_backward_links, cap_backward_links;
-
-    // Relations (node-node interaction types)
-    NodeRelation* relations;
-    size_t num_relations, cap_relations;
-
-    // Features (descriptive metadata)
-    char** features;
-    size_t num_features, cap_features;
-
-    // Public Interface
-    NodeExposure* exposures;
-    size_t num_exposures, cap_exposures;
-} Node;
+// All type definitions are provided in the public header.
 
 // === Node Lifecycle ===
 
@@ -92,7 +42,7 @@ void node_destroy(Node* node) {
 
 // === Node API ===
 
-size_t node_add_relation(Node* node, int type, NodeForwardFn forward, NodeBackwardFn backward, const char* name, void* context) {
+static size_t node_add_relation_full(Node* node, int type, NodeForwardFn forward, NodeBackwardFn backward, const char* name, void* context) {
     if (node->num_relations == node->cap_relations) {
         void* tmp = grow_array(node->relations, sizeof(NodeRelation), &node->cap_relations);
         if (!tmp) return (size_t)-1;
@@ -101,6 +51,10 @@ size_t node_add_relation(Node* node, int type, NodeForwardFn forward, NodeBackwa
     NodeRelation r = {type, forward, backward, strdup(name), context};
     node->relations[node->num_relations] = r;
     return node->num_relations++;
+}
+
+size_t node_add_relation(Node* node, int type, NodeForwardFn forward, NodeBackwardFn backward) {
+    return node_add_relation_full(node, type, forward, backward, "", NULL);
 }
 
 size_t node_add_feature(Node* node, const char* feature) {
@@ -193,5 +147,50 @@ void node_gather_from_siblings(Node* node, void* out) {
             if (rel->backward)
                 rel->backward(link->node, out);
         }
+    }
+}
+
+// === Additional Accessors ===
+
+NodeRelation* node_get_relation(const Node* node, size_t index) {
+    if (!node || index >= node->num_relations) return NULL;
+    return &node->relations[index];
+}
+
+const char* node_get_feature(const Node* node, size_t index) {
+    if (!node || index >= node->num_features) return NULL;
+    return node->features[index];
+}
+
+NodeExposure* node_get_exposure(const Node* node, size_t index) {
+    if (!node || index >= node->num_exposures) return NULL;
+    return &node->exposures[index];
+}
+
+const NodeLink* node_get_forward_link(const Node* node, size_t index) {
+    if (!node || index >= node->num_forward_links) return NULL;
+    return &node->forward_links[index];
+}
+
+const NodeLink* node_get_backward_link(const Node* node, size_t index) {
+    if (!node || index >= node->num_backward_links) return NULL;
+    return &node->backward_links[index];
+}
+
+// === Recursive Traversal ===
+
+void node_scatter_to_descendants(Node* node, void* data) {
+    if (!node) return;
+    node_scatter_to_siblings(node, data);
+    for (size_t i = 0; i < node->num_forward_links; ++i) {
+        node_scatter_to_descendants(node->forward_links[i].node, data);
+    }
+}
+
+void node_gather_from_ancestors(Node* node, void* out) {
+    if (!node) return;
+    node_gather_from_siblings(node, out);
+    for (size_t i = 0; i < node->num_backward_links; ++i) {
+        node_gather_from_ancestors(node->backward_links[i].node, out);
     }
 }
