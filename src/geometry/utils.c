@@ -122,11 +122,23 @@ void geneology_traverse_bfs(Geneology* g, Node* root, GeneologyVisitFn visit, vo
 // Stubs for search/sort
 typedef int (*GeneologyNodeCmp)(const Node*, const Node*);
 void geneology_sort(Geneology* g, GeneologyNodeCmp cmp) {
-    // stub: implement as needed
+    if (!g || !cmp || g->num_nodes < 2) return;
+    for (size_t i = 0; i < g->num_nodes - 1; ++i) {
+        for (size_t j = i + 1; j < g->num_nodes; ++j) {
+            if (cmp(g->nodes[i], g->nodes[j]) > 0) {
+                Node* tmp = g->nodes[i];
+                g->nodes[i] = g->nodes[j];
+                g->nodes[j] = tmp;
+            }
+        }
+    }
 }
 
 Node* geneology_search(Geneology* g, int (*pred)(const Node*, void*), void* user) {
-    // stub: implement as needed
+    if (!g || !pred) return NULL;
+    for (size_t i = 0; i < g->num_nodes; ++i) {
+        if (pred(g->nodes[i], user)) return g->nodes[i];
+    }
     return NULL;
 }
 
