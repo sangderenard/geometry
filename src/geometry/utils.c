@@ -43,6 +43,48 @@ static void node_add_to_stencil(Node**** arr, size_t** num_arr, size_t* num_dims
     (*num_arr)[dim]++;
 }
 
+// === Geneology Basic Operations ===
+
+Geneology* geneology_create(void) {
+    return calloc(1, sizeof(Geneology));
+}
+
+void geneology_destroy(Geneology* g) {
+    if (!g) return;
+    free(g->nodes);
+    free(g);
+}
+
+void geneology_add_node(Geneology* g, Node* node) {
+    if (!g || !node) return;
+    if (g->num_nodes == g->cap_nodes) {
+        size_t new_cap = g->cap_nodes ? g->cap_nodes * 2 : 8;
+        g->nodes = realloc(g->nodes, new_cap * sizeof(Node*));
+        g->cap_nodes = new_cap;
+    }
+    g->nodes[g->num_nodes++] = node;
+}
+
+void geneology_remove_node(Geneology* g, Node* node) {
+    if (!g || !node) return;
+    for (size_t i = 0; i < g->num_nodes; ++i) {
+        if (g->nodes[i] == node) {
+            memmove(&g->nodes[i], &g->nodes[i + 1], (g->num_nodes - i - 1) * sizeof(Node*));
+            g->num_nodes--;
+            break;
+        }
+    }
+}
+
+size_t geneology_num_nodes(const Geneology* g) {
+    return g ? g->num_nodes : 0;
+}
+
+Node* geneology_get_node(const Geneology* g, size_t idx) {
+    if (!g || idx >= g->num_nodes) return NULL;
+    return g->nodes[idx];
+}
+
 // === Node Data Structures ===
 
 // All type definitions are provided in the public header.
@@ -288,31 +330,32 @@ size_t node_add_backward_link(Node* node, Node* link, int relation) {
     return node->num_backward_links++;
 }
 
-size_t node_add_bidirectional_link(Node* a, Node* b, int relation, size_t dim) {
+size_t node_add_bidirectional_link(Node* a, Node* b, int relation) {
     if (!a || !b) return (size_t)-1;
     // Add forward link for a -> b
     size_t idx1 = node_add_forward_link(a, b, relation);
     // Add to a's stencil (children, right_siblings, etc.)
     switch (relation) {
         case EDGE_PARENT_CHILD_CONTIGUOUS:
-            node_add_to_stencil(&a->children, &a->num_children, &a->num_dims_children, dim, b);
+            node_add_to_stencil(&a->children, &a->num_children, &a->num_dims_children, 0, b);
             break;
         case EDGE_SIBLING_LEFT_TO_RIGHT_CONTIGUOUS:
-            node_add_to_stencil(&a->right_siblings, &a->num_right_siblings, &a->num_dims_right_siblings, dim, b);
+            node_add_to_stencil(&a->right_siblings, &a->num_right_siblings, &a->num_dims_right_siblings, 0, b);
             break;
         default:
             break;
     }
     // Add backward link for b -> a (inverse relation)
     int inverse_relation = geneology_invert_relation(relation);
+    if (inverse_relation >= (int)b->num_relations) inverse_relation = 0;
     size_t idx2 = node_add_backward_link(b, a, inverse_relation);
     // Add to b's stencil (parents, left_siblings, etc.)
     switch (inverse_relation) {
         case EDGE_CHILD_PARENT_CONTIGUOUS:
-            node_add_to_stencil(&b->parents, &b->num_parents, &b->num_dims_parents, dim, a);
+            node_add_to_stencil(&b->parents, &b->num_parents, &b->num_dims_parents, 0, a);
             break;
         case EDGE_SIBLING_RIGHT_TO_LEFT_CONTIGUOUS:
-            node_add_to_stencil(&b->left_siblings, &b->num_left_siblings, &b->num_dims_left_siblings, dim, a);
+            node_add_to_stencil(&b->left_siblings, &b->num_left_siblings, &b->num_dims_left_siblings, 0, a);
             break;
         default:
             break;
