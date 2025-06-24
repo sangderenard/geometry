@@ -20,15 +20,12 @@ int node_is_locked(const Node* node); // Check if the node is currently locked
 
 // =====================
 // Geneology Lock Bank (declarations only)
+// Definitions for GeneologyLockBank reside in utils.h and utils.c. This
+// header previously duplicated the struct definition, which led to
+// redefinition errors on some platforms. We keep only the forward
+// declarations here.
 // =====================
 struct LockRequestQueue;
-
-typedef struct GeneologyLockBank {
-    struct LockRequestQueue* request_queue;
-    Node** locked_nodes;
-    size_t num_locked, cap_locked;
-    node_mutex_t bank_mutex;
-} GeneologyLockBank;
 
 GeneologyLockBank* geneology_lockbank_create(void);
 void geneology_lockbank_destroy(GeneologyLockBank* bank);
@@ -75,10 +72,15 @@ void node_add_edge(Node* src, Node* dst, int relation) {
             node_add_forward_link(src, dst, relation);
             node_add_backward_link(dst, src, relation);
             break;
-        case EDGE_SIBLING_SIBLING_CONTIGUOUS:
+        case EDGE_SIBLING_LEFT_TO_RIGHT_CONTIGUOUS:
             // Sibling (contiguous): src is left sibling, dst is right sibling
             node_add_forward_link(src, dst, relation);   // src -> dst (right)
             node_add_backward_link(dst, src, relation);  // dst -> src (left)
+            break;
+        case EDGE_SIBLING_RIGHT_TO_LEFT_CONTIGUOUS:
+            // Sibling (contiguous): src is right sibling, dst is left sibling
+            node_add_forward_link(src, dst, relation);   // src -> dst (left)
+            node_add_backward_link(dst, src, relation);  // dst -> src (right)
             break;
         case EDGE_SIBLING_SIBLING_NONCONTIGUOUS:
             // Sibling (noncontiguous): e.g., cousin or distant sibling
@@ -199,13 +201,6 @@ const GraphOps NodeGraphOps = {
 // ========================
 // Geneology Graph Operations
 // ========================
-
-// Update Geneology struct definition to match header
-typedef struct Geneology {
-    Node** nodes;
-    size_t num_nodes, cap_nodes;
-    PathHashDict* path_hash_dict; // Guidance: implement as a hash map from path hash to relationship info
-} Geneology;
 
 void geneology_merge(Geneology* dest, const Geneology* src) {
     // TODO: Implement merge logic
