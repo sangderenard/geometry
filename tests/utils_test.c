@@ -1,6 +1,7 @@
 #include "geometry/utils.h"
 #include "geometry/guardian.h"
 #include "geometry/stencil.h"
+#include "geometry/double_buffer.h"
 #include <assert.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -19,6 +20,15 @@ static void forward_add(Node* self, void* data) {
 static void backward_add(Node* self, void* data) {
     int* val = (int*)data;
     (*val)++;
+}
+
+void test_double_buffer() {
+    int a = 0, b = 0;
+    DoubleBuffer db;
+    double_buffer_init(&db, &a, &b);
+    *(int*)double_buffer_write(&db) = 42;
+    double_buffer_swap(&db);
+    assert(*(int*)double_buffer_read(&db) == 42);
 }
 
 // Helper to create a random rectangular stencil
@@ -145,12 +155,14 @@ int main(void) {
     guardian_send(guard, thread_token, thread_token, msg, strlen(msg)+1);
     char buf[16];
     size_t n = guardian_receive(guard, thread_token, buf, sizeof(buf));
+    if (n < sizeof(buf)) buf[n] = '\0';
     assert(n == strlen(msg)+1 && strcmp(buf, msg) == 0);
     guardian_free(guard, mem_token);
     guardian_unregister_thread(guard, thread_token);
     guardian_destroy(guard);
 
     printf("utils_test passed\n");
+    test_double_buffer();
 
     // New test for random node pairs
     srand((unsigned)time(NULL));

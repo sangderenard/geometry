@@ -1,5 +1,6 @@
 #include "geometry/utils.h"
 #include "geometry/dag.h"
+#include "geometry/guardian.h"
 #include <stdlib.h>
 #include <string.h>
 #include <stdint.h>
@@ -17,7 +18,7 @@
 // === Utility ===
 static void* grow_array(void* array, size_t elem_size, size_t* cap) {
     size_t new_cap = (*cap == 0) ? 4 : (*cap * 2);
-    void* new_arr = realloc(array, new_cap * elem_size);
+    void* new_arr = guardian_realloc_simple(array, new_cap * elem_size);
     if (new_arr) *cap = new_cap;
     return new_arr;
 }
@@ -28,8 +29,15 @@ static void node_add_to_stencil(Node**** arr, size_t** num_arr, size_t* num_dims
     if (dim >= *num_dims) {
         size_t old_dims = *num_dims;
         size_t new_dims = dim + 1;
-        *arr = realloc(*arr, new_dims * sizeof(Node**));
-        *num_arr = realloc(*num_arr, new_dims * sizeof(size_t));
+        Node*** tmp_arr = guardian_realloc_simple(*arr, new_dims * sizeof(Node**));
+        size_t* tmp_num = guardian_realloc_simple(*num_arr, new_dims * sizeof(size_t));
+        if (!tmp_arr || !tmp_num) {
+            guardian_free_simple(tmp_arr);
+            guardian_free_simple(tmp_num);
+            return;
+        }
+        *arr = tmp_arr;
+        *num_arr = tmp_num;
         for (size_t d = old_dims; d < new_dims; ++d) {
             (*arr)[d] = NULL;
             (*num_arr)[d] = 0;
@@ -38,7 +46,9 @@ static void node_add_to_stencil(Node**** arr, size_t** num_arr, size_t* num_dims
     }
     // Grow array in this dimension
     size_t idx = (*num_arr)[dim];
-    (*arr)[dim] = realloc((*arr)[dim], (idx + 1) * sizeof(Node*));
+    Node** tmp_dim = guardian_realloc_simple((*arr)[dim], (idx + 1) * sizeof(Node*));
+    if (!tmp_dim) return;
+    (*arr)[dim] = tmp_dim;
     (*arr)[dim][idx] = target;
     (*num_arr)[dim]++;
 }
@@ -46,20 +56,22 @@ static void node_add_to_stencil(Node**** arr, size_t** num_arr, size_t* num_dims
 // === Geneology Basic Operations ===
 
 Geneology* geneology_create(void) {
-    return calloc(1, sizeof(Geneology));
+    return guardian_calloc_simple(1, sizeof(Geneology));
 }
 
 void geneology_destroy(Geneology* g) {
     if (!g) return;
-    free(g->nodes);
-    free(g);
+    guardian_free_simple(g->nodes);
+    guardian_free_simple(g);
 }
 
 void geneology_add_node(Geneology* g, Node* node) {
     if (!g || !node) return;
     if (g->num_nodes == g->cap_nodes) {
         size_t new_cap = g->cap_nodes ? g->cap_nodes * 2 : 8;
-        g->nodes = realloc(g->nodes, new_cap * sizeof(Node*));
+        Node** tmp = realloc(g->nodes, new_cap * sizeof(Node*));
+        if (!tmp) return;
+        g->nodes = tmp;
         g->cap_nodes = new_cap;
     }
     g->nodes[g->num_nodes++] = node;
@@ -93,9 +105,9 @@ Node* geneology_get_node(const Geneology* g, size_t idx) {
 #include <stdbool.h>
 void geneology_traverse_dfs(Geneology* g, Node* root, GeneologyVisitFn visit, void* user) {
     if (!g || !root || !visit) return;
-    bool* visited = calloc(g->num_nodes, sizeof(bool));
+    bool* visited = guardian_calloc_simple(g->num_nodes, sizeof(bool));
     size_t stack_cap = 16, stack_size = 0;
-    Node** stack = malloc(stack_cap * sizeof(Node*));
+    Node** stack = guardian_malloc_simple(stack_cap * sizeof(Node*));
     stack[stack_size++] = root;
     while (stack_size) {
         Node* n = stack[--stack_size];
@@ -106,21 +118,24 @@ void geneology_traverse_dfs(Geneology* g, Node* root, GeneologyVisitFn visit, vo
         visit(n, user);
         for (size_t i = 0; i < n->num_forward_links; ++i) {
             if (stack_size == stack_cap) {
-                stack_cap *= 2;
-                stack = realloc(stack, stack_cap * sizeof(Node*));
+                size_t new_cap = stack_cap * 2;
+                Node** tmp = guardian_realloc_simple(stack, new_cap * sizeof(Node*));
+                if (!tmp) break;
+                stack = tmp;
+                stack_cap = new_cap;
             }
             stack[stack_size++] = n->forward_links[i].node;
         }
     }
-    free(stack);
-    free(visited);
+    guardian_free_simple(stack);
+    guardian_free_simple(visited);
 }
 
 void geneology_traverse_bfs(Geneology* g, Node* root, GeneologyVisitFn visit, void* user) {
     if (!g || !root || !visit) return;
-    bool* visited = calloc(g->num_nodes, sizeof(bool));
+    bool* visited = guardian_calloc_simple(g->num_nodes, sizeof(bool));
     size_t queue_cap = 16, queue_size = 0, queue_head = 0;
-    Node** queue = malloc(queue_cap * sizeof(Node*));
+    Node** queue = guardian_malloc_simple(queue_cap * sizeof(Node*));
     queue[queue_size++] = root;
     while (queue_head < queue_size) {
         Node* n = queue[queue_head++];
@@ -131,14 +146,17 @@ void geneology_traverse_bfs(Geneology* g, Node* root, GeneologyVisitFn visit, vo
         visit(n, user);
         for (size_t i = 0; i < n->num_forward_links; ++i) {
             if (queue_size == queue_cap) {
-                queue_cap *= 2;
-                queue = realloc(queue, queue_cap * sizeof(Node*));
+                size_t new_cap = queue_cap * 2;
+                Node** tmp = guardian_realloc_simple(queue, new_cap * sizeof(Node*));
+                if (!tmp) break;
+                queue = tmp;
+                queue_cap = new_cap;
             }
             queue[queue_size++] = n->forward_links[i].node;
         }
     }
-    free(queue);
-    free(visited);
+    guardian_free_simple(queue);
+    guardian_free_simple(visited);
 }
 
 // Stubs for search/sort
@@ -167,7 +185,7 @@ Node* geneology_search(Geneology* g, int (*pred)(const Node*, void*), void* user
 // === Node Lifecycle ===
 
 Node* node_create(void) {
-    Node* n = (Node*)calloc(1, sizeof(Node));
+    Node* n = (Node*)guardian_calloc_simple(1, sizeof(Node));
     static uint64_t counter = 1;
     n->uid = counter++;
 #ifdef _WIN32
@@ -198,39 +216,39 @@ void node_destroy(Node* node) {
 #else
     pthread_mutex_destroy(&node->mutex);
 #endif
-    free(node->id);
-    free(node->relations);
+    guardian_free_simple(node->id);
+    guardian_free_simple(node->relations);
     if (node->features) {
         for (size_t i = 0; i < node->num_features; ++i) {
-            free(node->features[i]);
+            guardian_free_simple(node->features[i]);
         }
     }
-    free(node->features);
-    free(node->exposures);
-    free(node->forward_links);
-    free(node->backward_links);
+    guardian_free_simple(node->features);
+    guardian_free_simple(node->exposures);
+    guardian_free_simple(node->forward_links);
+    guardian_free_simple(node->backward_links);
     // Free multidimensional stencil arrays
     if (node->parents) {
-        for (size_t d = 0; d < node->num_dims_parents; ++d) free(node->parents[d]);
-        free(node->parents);
-        free(node->num_parents);
+        for (size_t d = 0; d < node->num_dims_parents; ++d) guardian_free_simple(node->parents[d]);
+        guardian_free_simple(node->parents);
+        guardian_free_simple(node->num_parents);
     }
     if (node->children) {
-        for (size_t d = 0; d < node->num_dims_children; ++d) free(node->children[d]);
-        free(node->children);
-        free(node->num_children);
+        for (size_t d = 0; d < node->num_dims_children; ++d) guardian_free_simple(node->children[d]);
+        guardian_free_simple(node->children);
+        guardian_free_simple(node->num_children);
     }
     if (node->left_siblings) {
-        for (size_t d = 0; d < node->num_dims_left_siblings; ++d) free(node->left_siblings[d]);
-        free(node->left_siblings);
-        free(node->num_left_siblings);
+        for (size_t d = 0; d < node->num_dims_left_siblings; ++d) guardian_free_simple(node->left_siblings[d]);
+        guardian_free_simple(node->left_siblings);
+        guardian_free_simple(node->num_left_siblings);
     }
     if (node->right_siblings) {
-        for (size_t d = 0; d < node->num_dims_right_siblings; ++d) free(node->right_siblings[d]);
-        free(node->right_siblings);
-        free(node->num_right_siblings);
+        for (size_t d = 0; d < node->num_dims_right_siblings; ++d) guardian_free_simple(node->right_siblings[d]);
+        guardian_free_simple(node->right_siblings);
+        guardian_free_simple(node->num_right_siblings);
     }
-    free(node);
+    guardian_free_simple(node);
 }
 
 // === Node API ===
@@ -504,35 +522,37 @@ void node_gather_from_ancestors(Node* node, void* out) {
 
 // --- SimpleGraph implementation ---
 SimpleGraph* simplegraph_create(Geneology* g) {
-    SimpleGraph* graph = (SimpleGraph*)calloc(1, sizeof(SimpleGraph));
+    SimpleGraph* graph = (SimpleGraph*)guardian_calloc_simple(1, sizeof(SimpleGraph));
     graph->geneology = g;
     return graph;
 }
 
 void simplegraph_destroy(SimpleGraph* graph) {
     if (!graph) return;
-    free(graph->edges);
+    guardian_free_simple(graph->edges);
     if (graph->feature_block) {
         // User is responsible for freeing tensor objects
-        free(graph->feature_block);
+        guardian_free_simple(graph->feature_block);
     }
     if (graph->node_feature_maps) {
         for (size_t i = 0; i < graph->num_nodes; ++i) {
             SimpleGraphFeatureMap* fmap = &graph->node_feature_maps[i];
             for (size_t j = 0; j < fmap->cap_entries; ++j) {
-                free(fmap->entries[j].key);
+                guardian_free_simple(fmap->entries[j].key);
             }
-            free(fmap->entries);
+            guardian_free_simple(fmap->entries);
         }
-        free(graph->node_feature_maps);
+        guardian_free_simple(graph->node_feature_maps);
     }
-    free(graph);
+    guardian_free_simple(graph);
 }
 
 static void simplegraph_grow_edges(SimpleGraph* graph) {
     if (graph->num_edges == graph->cap_edges) {
         size_t new_cap = graph->cap_edges ? graph->cap_edges * 2 : 4;
-        graph->edges = (SimpleGraphEdge*)realloc(graph->edges, new_cap * sizeof(SimpleGraphEdge));
+        SimpleGraphEdge* tmp = guardian_realloc_simple(graph->edges, new_cap * sizeof(SimpleGraphEdge));
+        if (!tmp) return;
+        graph->edges = tmp;
         graph->cap_edges = new_cap;
     }
 }
@@ -548,7 +568,9 @@ void simplegraph_add_edge(SimpleGraph* graph, Node* src, Node* dst, SimpleGraphE
 static void simplegraph_grow_features(SimpleGraph* graph) {
     if (graph->num_features == graph->cap_features) {
         size_t new_cap = graph->cap_features ? graph->cap_features * 2 : 8;
-        graph->feature_block = (void**)realloc(graph->feature_block, new_cap * sizeof(void*));
+        void** tmp = guardian_realloc_simple(graph->feature_block, new_cap * sizeof(void*));
+        if (!tmp) return;
+        graph->feature_block = tmp;
         graph->cap_features = new_cap;
     }
 }
@@ -558,7 +580,9 @@ static void simplegraph_grow_node_maps(SimpleGraph* graph) {
     if (g_nodes > graph->cap_nodes) {
         size_t new_cap = graph->cap_nodes ? graph->cap_nodes * 2 : 8;
         if (new_cap < g_nodes) new_cap = g_nodes;
-        graph->node_feature_maps = (SimpleGraphFeatureMap*)realloc(graph->node_feature_maps, new_cap * sizeof(SimpleGraphFeatureMap));
+        SimpleGraphFeatureMap* tmp = guardian_realloc_simple(graph->node_feature_maps, new_cap * sizeof(SimpleGraphFeatureMap));
+        if (!tmp) return;
+        graph->node_feature_maps = tmp;
         for (size_t i = graph->cap_nodes; i < new_cap; ++i) {
             memset(&graph->node_feature_maps[i], 0, sizeof(SimpleGraphFeatureMap));
         }
@@ -586,7 +610,7 @@ void simplegraph_add_feature(SimpleGraph* graph, Node* node, const char* feature
     // Grow feature map if needed
     if (fmap->num_entries * 2 >= fmap->cap_entries) {
         size_t new_cap = fmap->cap_entries ? fmap->cap_entries * 2 : 8;
-        SimpleGraphFeatureEntry* new_entries = calloc(new_cap, sizeof(SimpleGraphFeatureEntry));
+        SimpleGraphFeatureEntry* new_entries = guardian_calloc_simple(new_cap, sizeof(SimpleGraphFeatureEntry));
         for (size_t i = 0; i < fmap->cap_entries; ++i) {
             if (fmap->entries[i].key) {
                 size_t h = simplegraph_hash(fmap->entries[i].key, new_cap);
@@ -594,7 +618,7 @@ void simplegraph_add_feature(SimpleGraph* graph, Node* node, const char* feature
                 new_entries[h] = fmap->entries[i];
             }
         }
-        free(fmap->entries);
+        guardian_free_simple(fmap->entries);
         fmap->entries = new_entries;
         fmap->cap_entries = new_cap;
     }
@@ -609,7 +633,7 @@ void simplegraph_add_feature(SimpleGraph* graph, Node* node, const char* feature
     }
     if (!fmap->entries) {
         fmap->cap_entries = 8;
-        fmap->entries = calloc(fmap->cap_entries, sizeof(SimpleGraphFeatureEntry));
+        fmap->entries = guardian_calloc_simple(fmap->cap_entries, sizeof(SimpleGraphFeatureEntry));
     }
     fmap->entries[h].key = strdup(feature_name);
     fmap->entries[h].value = tensor_ptr;
@@ -874,7 +898,9 @@ void neuralnetwork_backwardstep(NeuralNetwork* nn, size_t dag_idx, size_t step_i
 static void neighbor_map_grow(NeighborMap* map) {
     if (map->count == map->cap) {
         size_t new_cap = map->cap ? map->cap * 2 : 8;
-        map->entries = (NeighborEntry*)realloc(map->entries, new_cap * sizeof(NeighborEntry));
+        NeighborEntry* tmp = guardian_realloc_simple(map->entries, new_cap * sizeof(NeighborEntry));
+        if (!tmp) return;
+        map->entries = tmp;
         map->cap = new_cap;
     }
 }
@@ -971,7 +997,7 @@ char* node_generate_stencil_relation_name(const GeneralStencil* stencil, size_t 
         }
         radius = max_offset;
     }
-    char* name = (char*)malloc(128);
+    char* name = (char*)guardian_malloc_simple(128);
     snprintf(name, 128, "%s_%zud_r%zu_pole%zu", type_str, dims, radius, pole_index);
     return name;
 }
@@ -1045,10 +1071,10 @@ int stencilset_negotiate_bond(const StencilSet* a, size_t pole_a, const StencilS
 // --- Quaternion and QuaternionHistory implementation ---
 #include <math.h>
 QuaternionHistory* quaternion_history_create(size_t window_size, QuaternionDecayFn decay_fn, void* user_data) {
-    QuaternionHistory* hist = (QuaternionHistory*)calloc(1, sizeof(QuaternionHistory));
+    QuaternionHistory* hist = (QuaternionHistory*)guardian_calloc_simple(1, sizeof(QuaternionHistory));
     hist->window_size = window_size;
     hist->cap = window_size ? window_size : 16;
-    hist->quats = (Quaternion*)calloc(hist->cap, sizeof(Quaternion));
+    hist->quats = (Quaternion*)guardian_calloc_simple(hist->cap, sizeof(Quaternion));
     hist->decay_fn = decay_fn;
     hist->decay_user_data = user_data;
     return hist;
@@ -1056,8 +1082,8 @@ QuaternionHistory* quaternion_history_create(size_t window_size, QuaternionDecay
 
 void quaternion_history_destroy(QuaternionHistory* hist) {
     if (!hist) return;
-    free(hist->quats);
-    free(hist);
+    guardian_free_simple(hist->quats);
+    guardian_free_simple(hist);
 }
 
 void quaternion_history_add(QuaternionHistory* hist, Quaternion q) {
@@ -1069,7 +1095,9 @@ void quaternion_history_add(QuaternionHistory* hist, Quaternion q) {
     } else {
         if (hist->count == hist->cap) {
             size_t new_cap = hist->cap * 2;
-            hist->quats = (Quaternion*)realloc(hist->quats, new_cap * sizeof(Quaternion));
+            Quaternion* tmp = guardian_realloc_simple(hist->quats, new_cap * sizeof(Quaternion));
+            if (!tmp) return;
+            hist->quats = tmp;
             hist->cap = new_cap;
         }
         hist->quats[hist->count++] = q;
@@ -1375,7 +1403,7 @@ int node_is_locked(const Node* node) {
 
 // Geneology Lock Bank
 GeneologyLockBank* geneology_lockbank_create(void) {
-    GeneologyLockBank* bank = calloc(1, sizeof(GeneologyLockBank));
+    GeneologyLockBank* bank = guardian_calloc_simple(1, sizeof(GeneologyLockBank));
     if (!bank) return NULL;
 #ifdef _WIN32
     InitializeCriticalSection(&bank->bank_mutex);
@@ -1392,8 +1420,8 @@ void geneology_lockbank_destroy(GeneologyLockBank* bank) {
 #else
     pthread_mutex_destroy(&bank->bank_mutex);
 #endif
-    free(bank->locked_nodes);
-    free(bank);
+    guardian_free_simple(bank->locked_nodes);
+    guardian_free_simple(bank);
 }
 
 static int lockbank_has_node(GeneologyLockBank* bank, Node* node) {
@@ -1415,7 +1443,9 @@ void geneology_lockbank_request(GeneologyLockBank* bank, Node** nodes, size_t nu
         if (!lockbank_has_node(bank, n) && node_trylock(n)) {
             if (bank->num_locked == bank->cap_locked) {
                 size_t new_cap = bank->cap_locked ? bank->cap_locked * 2 : 4;
-                bank->locked_nodes = realloc(bank->locked_nodes, new_cap * sizeof(Node*));
+                Node** tmp = guardian_realloc_simple(bank->locked_nodes, new_cap * sizeof(Node*));
+                if (!tmp) break;
+                bank->locked_nodes = tmp;
                 bank->cap_locked = new_cap;
             }
             bank->locked_nodes[bank->num_locked++] = n;
