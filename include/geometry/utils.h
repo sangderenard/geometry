@@ -1,6 +1,5 @@
 #ifndef GEOMETRY_UTILS_H
 #define GEOMETRY_UTILS_H
-#endif
 
 #ifdef __cplusplus
 extern "C" {
@@ -299,6 +298,7 @@ NodeExposure* node_get_exposure(const Node* node, size_t index);
 size_t node_add_forward_link(Node* node, Node* link, int relation);
 size_t node_add_backward_link(Node* node, Node* link, int relation);
 size_t node_add_bidirectional_link(Node* a, Node* b, int relation);
+int geneology_invert_relation(int relation_type);
 const NodeLink* node_get_forward_link(const Node* node, size_t index);
 const NodeLink* node_get_backward_link(const Node* node, size_t index);
 
@@ -473,36 +473,10 @@ void* simplegraph_get_feature(SimpleGraph* graph, Node* node, const char* featur
 void simplegraph_forward(SimpleGraph* graph);
 void simplegraph_backward(SimpleGraph* graph);
 
-// --- DAG Manifest Structures ---
-
-// A mapping from a set of input nodes to a set of output nodes at a given level
-typedef struct {
-    Node** inputs;
-    size_t num_inputs;
-    Node** outputs;
-    size_t num_outputs;
-} DagManifestMapping;
-
-// A level in the manifest: an array of mappings (convergences/divergences)
-typedef struct {
-    DagManifestMapping* mappings;
-    size_t num_mappings;
-    int level_index; // can be negative or positive
-} DagManifestLevel;
-
-// A manifest: an array of levels (ordered by causal index)
-typedef struct {
-    DagManifestLevel* levels;
-    size_t num_levels;
-} DagManifest;
-
-// A manifest: an array of levels (ordered by causal index)
-typedef struct Dag {
-    DagManifest* manifests;
-    size_t num_manifests, cap_manifests;
-} Dag;
-
 // Manifest management
+// DagManifestMapping, DagManifestLevel, DagManifest, and Dag are fully
+// defined in <geometry/dag.h>.  We only provide the management function
+// prototypes here to prevent duplicate type definitions across headers.
 Dag* dag_create(void);
 void dag_destroy(Dag* dag);
 void dag_add_manifest(Dag* dag, DagManifest* manifest);
@@ -510,3 +484,5 @@ void dag_add_manifest(Dag* dag, DagManifest* manifest);
 #ifdef __cplusplus
 }
 #endif
+
+#endif /* GEOMETRY_UTILS_H */

@@ -1,10 +1,12 @@
 #include "geometry/utils.h"
+#include "geometry/guardian.h"
 #include "geometry/stencil.h"
 #include <assert.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <time.h>
 #include <math.h>
+#include <string.h>
 #ifndef M_PI
 #define M_PI 3.14159265358979323846
 #endif
@@ -123,6 +125,30 @@ int main(void) {
 
     node_destroy(a);
     node_destroy(b);
+
+    // Node locking API
+    Node* lock_node = node_create();
+    node_lock(lock_node);
+    assert(node_is_locked(lock_node));
+    assert(!node_trylock(lock_node));
+    node_unlock(lock_node);
+    assert(!node_is_locked(lock_node));
+    node_destroy(lock_node);
+
+    // TokenGuardian basic usage
+    TokenGuardian* guard = guardian_create();
+    unsigned long thread_token = guardian_register_thread(guard);
+    unsigned long mem_token;
+    void* block = guardian_alloc(guard, 16, &mem_token);
+    assert(block != NULL);
+    const char* msg = "hello";
+    guardian_send(guard, thread_token, thread_token, msg, strlen(msg)+1);
+    char buf[16];
+    size_t n = guardian_receive(guard, thread_token, buf, sizeof(buf));
+    assert(n == strlen(msg)+1 && strcmp(buf, msg) == 0);
+    guardian_free(guard, mem_token);
+    guardian_unregister_thread(guard, thread_token);
+    guardian_destroy(guard);
 
     printf("utils_test passed\n");
 
