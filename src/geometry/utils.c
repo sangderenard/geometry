@@ -1331,23 +1331,183 @@ Quaternion quaternion_history_average(const QuaternionHistory* hist) {
 #include "geometry/utils.h"
 
 // Node locking API
-void node_lock(Node* node) { (void)node; /* TODO: implement */ }
-void node_unlock(Node* node) { (void)node; /* TODO: implement */ }
-int node_trylock(Node* node) { (void)node; return 0; /* TODO: implement */ }
-int node_is_locked(const Node* node) { (void)node; return 0; /* TODO: implement */ }
+void node_lock(Node* node) {
+    if (!node) return;
+#ifdef _WIN32
+    EnterCriticalSection(&node->mutex);
+#else
+    pthread_mutex_lock(&node->mutex);
+#endif
+}
+
+void node_unlock(Node* node) {
+    if (!node) return;
+#ifdef _WIN32
+    LeaveCriticalSection(&node->mutex);
+#else
+    pthread_mutex_unlock(&node->mutex);
+#endif
+}
+
+int node_trylock(Node* node) {
+    if (!node) return 0;
+#ifdef _WIN32
+    return TryEnterCriticalSection(&node->mutex);
+#else
+    return pthread_mutex_trylock(&node->mutex) == 0;
+#endif
+}
+
+int node_is_locked(const Node* node) {
+    if (!node) return 0;
+#ifdef _WIN32
+    int locked = !TryEnterCriticalSection((LPCRITICAL_SECTION)&node->mutex);
+    if (!locked) LeaveCriticalSection((LPCRITICAL_SECTION)&node->mutex);
+    return locked;
+#else
+    if (pthread_mutex_trylock((pthread_mutex_t*)&node->mutex) == 0) {
+        pthread_mutex_unlock((pthread_mutex_t*)&node->mutex);
+        return 0;
+    }
+    return 1;
+#endif
+}
 
 // Geneology Lock Bank
-GeneologyLockBank* geneology_lockbank_create(void) { return NULL; /* TODO: implement */ }
-void geneology_lockbank_destroy(GeneologyLockBank* bank) { (void)bank; /* TODO: implement */ }
-void geneology_lockbank_request(GeneologyLockBank* bank, Node** nodes, size_t num_nodes) { (void)bank; (void)nodes; (void)num_nodes; /* TODO: implement */ }
-int geneology_lockbank_confirm(GeneologyLockBank* bank, Node** nodes, size_t num_nodes) { (void)bank; (void)nodes; (void)num_nodes; return 0; /* TODO: implement */ }
-void geneology_lockbank_release(GeneologyLockBank* bank, Node** nodes, size_t num_nodes) { (void)bank; (void)nodes; (void)num_nodes; /* TODO: implement */ }
+GeneologyLockBank* geneology_lockbank_create(void) {
+    GeneologyLockBank* bank = calloc(1, sizeof(GeneologyLockBank));
+    if (!bank) return NULL;
+#ifdef _WIN32
+    InitializeCriticalSection(&bank->bank_mutex);
+#else
+    pthread_mutex_init(&bank->bank_mutex, NULL);
+#endif
+    return bank;
+}
+
+void geneology_lockbank_destroy(GeneologyLockBank* bank) {
+    if (!bank) return;
+#ifdef _WIN32
+    DeleteCriticalSection(&bank->bank_mutex);
+#else
+    pthread_mutex_destroy(&bank->bank_mutex);
+#endif
+    free(bank->locked_nodes);
+    free(bank);
+}
+
+static int lockbank_has_node(GeneologyLockBank* bank, Node* node) {
+    for (size_t i = 0; i < bank->num_locked; ++i)
+        if (bank->locked_nodes[i] == node) return 1;
+    return 0;
+}
+
+void geneology_lockbank_request(GeneologyLockBank* bank, Node** nodes, size_t num_nodes) {
+    if (!bank || !nodes) return;
+#ifdef _WIN32
+    EnterCriticalSection(&bank->bank_mutex);
+#else
+    pthread_mutex_lock(&bank->bank_mutex);
+#endif
+    for (size_t i = 0; i < num_nodes; ++i) {
+        Node* n = nodes[i];
+        if (!n) continue;
+        if (!lockbank_has_node(bank, n) && node_trylock(n)) {
+            if (bank->num_locked == bank->cap_locked) {
+                size_t new_cap = bank->cap_locked ? bank->cap_locked * 2 : 4;
+                bank->locked_nodes = realloc(bank->locked_nodes, new_cap * sizeof(Node*));
+                bank->cap_locked = new_cap;
+            }
+            bank->locked_nodes[bank->num_locked++] = n;
+        }
+    }
+#ifdef _WIN32
+    LeaveCriticalSection(&bank->bank_mutex);
+#else
+    pthread_mutex_unlock(&bank->bank_mutex);
+#endif
+}
+
+int geneology_lockbank_confirm(GeneologyLockBank* bank, Node** nodes, size_t num_nodes) {
+    if (!bank || !nodes) return 0;
+#ifdef _WIN32
+    EnterCriticalSection(&bank->bank_mutex);
+#else
+    pthread_mutex_lock(&bank->bank_mutex);
+#endif
+    int all_locked = 1;
+    for (size_t i = 0; i < num_nodes; ++i) {
+        if (!lockbank_has_node(bank, nodes[i])) { all_locked = 0; break; }
+    }
+#ifdef _WIN32
+    LeaveCriticalSection(&bank->bank_mutex);
+#else
+    pthread_mutex_unlock(&bank->bank_mutex);
+#endif
+    return all_locked;
+}
+
+void geneology_lockbank_release(GeneologyLockBank* bank, Node** nodes, size_t num_nodes) {
+    if (!bank || !nodes) return;
+#ifdef _WIN32
+    EnterCriticalSection(&bank->bank_mutex);
+#else
+    pthread_mutex_lock(&bank->bank_mutex);
+#endif
+    for (size_t i = 0; i < num_nodes; ++i) {
+        Node* n = nodes[i];
+        if (!n) continue;
+        for (size_t j = 0; j < bank->num_locked; ++j) {
+            if (bank->locked_nodes[j] == n) {
+                node_unlock(n);
+                bank->locked_nodes[j] = bank->locked_nodes[--bank->num_locked];
+                break;
+            }
+        }
+    }
+#ifdef _WIN32
+    LeaveCriticalSection(&bank->bank_mutex);
+#else
+    pthread_mutex_unlock(&bank->bank_mutex);
+#endif
+}
 
 // Graph set operations
-size_t graph_set_union(Node** a, size_t a_count, Node** b, size_t b_count, Node** out_union, size_t out_cap) { (void)a; (void)a_count; (void)b; (void)b_count; (void)out_union; (void)out_cap; return 0; /* TODO: implement */ }
-size_t graph_set_intersection(Node** a, size_t a_count, Node** b, size_t b_count, Node** out_inter, size_t out_cap) { (void)a; (void)a_count; (void)b; (void)b_count; (void)out_inter; (void)out_cap; return 0; /* TODO: implement */ }
-size_t graph_set_difference(Node** a, size_t a_count, Node** b, size_t b_count, Node** out_diff, size_t out_cap) { (void)a; (void)a_count; (void)b; (void)b_count; (void)out_diff; (void)out_cap; return 0; /* TODO: implement */ }
-int graph_set_contains(Node** set, size_t set_count, Node* node) { (void)set; (void)set_count; (void)node; return 0; /* TODO: implement */ }
+size_t graph_set_union(Node** a, size_t a_count, Node** b, size_t b_count, Node** out_union, size_t out_cap) {
+    size_t count = 0;
+    for (size_t i = 0; i < a_count && count < out_cap; ++i) out_union[count++] = a[i];
+    for (size_t j = 0; j < b_count && count < out_cap; ++j) {
+        int found = 0;
+        for (size_t i = 0; i < a_count; ++i) if (a[i] == b[j]) { found = 1; break; }
+        if (!found) out_union[count++] = b[j];
+    }
+    return count;
+}
+
+size_t graph_set_intersection(Node** a, size_t a_count, Node** b, size_t b_count, Node** out_inter, size_t out_cap) {
+    size_t count = 0;
+    for (size_t i = 0; i < a_count && count < out_cap; ++i) {
+        for (size_t j = 0; j < b_count; ++j) {
+            if (a[i] == b[j]) { out_inter[count++] = a[i]; break; }
+        }
+    }
+    return count;
+}
+
+size_t graph_set_difference(Node** a, size_t a_count, Node** b, size_t b_count, Node** out_diff, size_t out_cap) {
+    size_t count = 0;
+    for (size_t i = 0; i < a_count && count < out_cap; ++i) {
+        int found = 0;
+        for (size_t j = 0; j < b_count; ++j) if (a[i] == b[j]) { found = 1; break; }
+        if (!found) out_diff[count++] = a[i];
+    }
+    return count;
+}
+
+int graph_set_contains(Node** set, size_t set_count, Node* node) {
+    for (size_t i = 0; i < set_count; ++i) if (set[i] == node) return 1;
+    return 0;
+}
 
 // Node operator overrides
 Node* node_add(const Node* a, const Node* b) { (void)a; (void)b; return NULL; /* TODO: implement */ }
