@@ -1,4 +1,5 @@
 #include "geometry/utils.h"
+#include "geometry/dag.h"
 #include <stdlib.h>
 #include <string.h>
 #include <stdint.h>
@@ -6,6 +7,11 @@
 #include <windows.h>
 #else
 #include <pthread.h>
+#endif
+#include <stdio.h>
+#include <math.h>
+#ifndef M_PI
+#define M_PI 3.14159265358979323846
 #endif
 
 // === Utility ===
@@ -40,53 +46,6 @@ static void node_add_to_stencil(Node**** arr, size_t** num_arr, size_t* num_dims
 // === Node Data Structures ===
 
 // All type definitions are provided in the public header.
-
-// === Geneology Data Structure ===
-typedef struct Geneology {
-    Node** nodes;
-    size_t num_nodes, cap_nodes;
-} Geneology;
-
-Geneology* geneology_create(void) {
-    Geneology* g = (Geneology*)calloc(1, sizeof(Geneology));
-    return g;
-}
-
-void geneology_destroy(Geneology* g) {
-    if (!g) return;
-    free(g->nodes);
-    free(g);
-}
-
-void geneology_add_node(Geneology* g, Node* node) {
-    if (!g || !node) return;
-    if (g->num_nodes == g->cap_nodes) {
-        void* tmp = grow_array(g->nodes, sizeof(Node*), &g->cap_nodes);
-        if (!tmp) return;
-        g->nodes = (Node**)tmp;
-    }
-    g->nodes[g->num_nodes++] = node;
-}
-
-void geneology_remove_node(Geneology* g, Node* node) {
-    if (!g || !node) return;
-    for (size_t i = 0; i < g->num_nodes; ++i) {
-        if (g->nodes[i] == node) {
-            g->nodes[i] = g->nodes[g->num_nodes - 1];
-            g->num_nodes--;
-            return;
-        }
-    }
-}
-
-size_t geneology_num_nodes(const Geneology* g) {
-    return g ? g->num_nodes : 0;
-}
-
-Node* geneology_get_node(const Geneology* g, size_t idx) {
-    if (!g || idx >= g->num_nodes) return NULL;
-    return g->nodes[idx];
-}
 
 // Traversal (DFS, BFS)
 #include <stdbool.h>
@@ -948,4 +907,417 @@ int node_ensure_bidirectional_neighbor(Node* node, Node* neighbor, size_t pole_i
     }
     return 1;
 }
+
+// Procedural relationship naming for stencil-based relationships
+// Returns a malloc'd string describing the relationship (caller must free)
+char* node_generate_stencil_relation_name(const GeneralStencil* stencil, size_t pole_index, const char* base_type) {
+    if (!stencil || !base_type) return NULL;
+    // Compose a name like: "rect3d_r1_pole2" or "polar2d_r2_pole0"
+    const char* type_str = base_type;
+    size_t dims = stencil->dims;
+    size_t radius = 0;
+    // Try to infer radius if possible (for rectangular stencils)
+    if (stencil->count > 0 && stencil->poles) {
+        int max_offset = 0;
+        for (size_t i = 0; i < stencil->count; ++i) {
+            for (size_t d = 0; d < dims; ++d) {
+                int off = stencil->poles[i].offsets[d];
+                if (off < 0) off = -off;
+                if (off > max_offset) max_offset = off;
+            }
+        }
+        radius = max_offset;
+    }
+    char* name = (char*)malloc(128);
+    snprintf(name, 128, "%s_%zud_r%zu_pole%zu", type_str, dims, radius, pole_index);
+    return name;
+}
+
+// --- StencilSet helpers ---
+StencilSet* stencilset_wrap_single(GeneralStencil* stencil) {
+    if (!stencil) return NULL;
+    StencilSet* set = (StencilSet*)calloc(1, sizeof(StencilSet));
+    set->stencils = (GeneralStencil**)calloc(1, sizeof(GeneralStencil*));
+    set->stencils[0] = stencil;
+    set->count = 1;
+    set->cap = 1;
+    // Allocate 1x1 relation matrix
+    set->relation = (StencilRelation**)calloc(1, sizeof(StencilRelation*));
+    set->relation[0] = (StencilRelation*)calloc(1, sizeof(StencilRelation));
+    set->relation[0][0].type = STENCIL_RELATION_SAME_COORDINATE_SET;
+    set->relation[0][0].context = NULL;
+    set->relation[0][0].similarity_fn = NULL;
+    return set;
+}
+
+void stencilset_init_fully_connected(StencilSet* set, int default_relation_type) {
+    if (!set || set->count == 0) return;
+    // Free any existing relation matrix
+    if (set->relation) {
+        for (size_t i = 0; i < set->count; ++i) free(set->relation[i]);
+        free(set->relation);
+    }
+    set->relation = (StencilRelation**)calloc(set->count, sizeof(StencilRelation*));
+    for (size_t i = 0; i < set->count; ++i) {
+        set->relation[i] = (StencilRelation*)calloc(set->count, sizeof(StencilRelation));
+        for (size_t j = 0; j < set->count; ++j) {
+            set->relation[i][j].type = (i == j) ? STENCIL_RELATION_SAME_COORDINATE_SET : default_relation_type;
+            set->relation[i][j].context = NULL;
+            set->relation[i][j].similarity_fn = NULL;
+        }
+    }
+}
+
+// Negotiation logic for node bonds
+int stencilset_negotiate_bond(const StencilSet* a, size_t pole_a, const StencilSet* b, size_t pole_b, StencilRelation* out_relation) {
+    if (!a || !b || pole_a >= a->count || pole_b >= b->count) return STENCIL_RELATION_ORTHOGONAL;
+    // Default: if stencils are the same pointer, same coordinate set
+    if (a->stencils[pole_a] == b->stencils[pole_b]) {
+        if (out_relation) {
+            out_relation->type = STENCIL_RELATION_SAME_COORDINATE_SET;
+            out_relation->context = NULL;
+            out_relation->similarity_fn = NULL;
+        }
+        return STENCIL_RELATION_SAME_COORDINATE_SET;
+    }
+    // Example: check for rectangular or polar by dims/structure (simple heuristic)
+    if (a->stencils[pole_a]->dims == b->stencils[pole_b]->dims) {
+        // Could add more checks for axis-aligned, polar, etc.
+        if (out_relation) {
+            out_relation->type = STENCIL_RELATION_DIFFERENT_COORDINATE_SET;
+            out_relation->context = NULL;
+            out_relation->similarity_fn = NULL;
+        }
+        return STENCIL_RELATION_DIFFERENT_COORDINATE_SET;
+    }
+    // Otherwise, treat as orthogonal
+    if (out_relation) {
+        out_relation->type = STENCIL_RELATION_ORTHOGONAL;
+        out_relation->context = NULL;
+        out_relation->similarity_fn = NULL;
+    }
+    return STENCIL_RELATION_ORTHOGONAL;
+}
+
+// --- Quaternion and QuaternionHistory implementation ---
+#include <math.h>
+QuaternionHistory* quaternion_history_create(size_t window_size, QuaternionDecayFn decay_fn, void* user_data) {
+    QuaternionHistory* hist = (QuaternionHistory*)calloc(1, sizeof(QuaternionHistory));
+    hist->window_size = window_size;
+    hist->cap = window_size ? window_size : 16;
+    hist->quats = (Quaternion*)calloc(hist->cap, sizeof(Quaternion));
+    hist->decay_fn = decay_fn;
+    hist->decay_user_data = user_data;
+    return hist;
+}
+
+void quaternion_history_destroy(QuaternionHistory* hist) {
+    if (!hist) return;
+    free(hist->quats);
+    free(hist);
+}
+
+void quaternion_history_add(QuaternionHistory* hist, Quaternion q) {
+    if (!hist) return;
+    if (hist->window_size && hist->count == hist->window_size) {
+        // Move window left
+        memmove(hist->quats, hist->quats + 1, (hist->count - 1) * sizeof(Quaternion));
+        hist->quats[hist->count - 1] = q;
+    } else {
+        if (hist->count == hist->cap) {
+            size_t new_cap = hist->cap * 2;
+            hist->quats = (Quaternion*)realloc(hist->quats, new_cap * sizeof(Quaternion));
+            hist->cap = new_cap;
+        }
+        hist->quats[hist->count++] = q;
+    }
+}
+
+// Simple weighted sum aggregate (normalize at end)
+Quaternion quaternion_history_aggregate(const QuaternionHistory* hist) {
+    Quaternion sum = {0, 0, 0, 0};
+    if (!hist || !hist->count) return sum;
+    double total_weight = 0.0;
+    for (size_t i = 0; i < hist->count; ++i) {
+        double w = 1.0;
+        if (hist->decay_fn) w = hist->decay_fn(i, hist->count, hist->decay_user_data);
+        sum.w += hist->quats[i].w * w;
+        sum.x += hist->quats[i].x * w;
+        sum.y += hist->quats[i].y * w;
+        sum.z += hist->quats[i].z * w;
+        total_weight += w;
+    }
+    if (total_weight > 0) {
+        sum.w /= total_weight;
+        sum.x /= total_weight;
+        sum.y /= total_weight;
+        sum.z /= total_weight;
+    }
+    // Normalize quaternion
+    double norm = sqrt(sum.w*sum.w + sum.x*sum.x + sum.y*sum.y + sum.z*sum.z);
+    if (norm > 0) {
+        sum.w /= norm;
+        sum.x /= norm;
+        sum.y /= norm;
+        sum.z /= norm;
+    }
+    return sum;
+}
+
+// --- Quaternion Operators and Orientation Validators ---
+#include <math.h>
+
+Quaternion quaternion_add(Quaternion a, Quaternion b) {
+    return (Quaternion){a.w + b.w, a.x + b.x, a.y + b.y, a.z + b.z};
+}
+
+Quaternion quaternion_sub(Quaternion a, Quaternion b) {
+    return (Quaternion){a.w - b.w, a.x - b.x, a.y - b.y, a.z - b.z};
+}
+
+Quaternion quaternion_scale(Quaternion q, double s) {
+    return (Quaternion){q.w * s, q.x * s, q.y * s, q.z * s};
+}
+
+Quaternion quaternion_div(Quaternion q, double s) {
+    return (Quaternion){q.w / s, q.x / s, q.y / s, q.z / s};
+}
+
+Quaternion quaternion_conjugate(Quaternion q) {
+    return (Quaternion){q.w, -q.x, -q.y, -q.z};
+}
+
+Quaternion quaternion_mul(Quaternion a, Quaternion b) {
+    return (Quaternion){
+        a.w*b.w - a.x*b.x - a.y*b.y - a.z*b.z,
+        a.w*b.x + a.x*b.w + a.y*b.z - a.z*b.y,
+        a.w*b.y - a.x*b.z + a.y*b.w + a.z*b.x,
+        a.w*b.z + a.x*b.y - a.y*b.x + a.z*b.w
+    };
+}
+
+double quaternion_dot(Quaternion a, Quaternion b) {
+    return a.w*b.w + a.x*b.x + a.y*b.y + a.z*b.z;
+}
+
+double quaternion_norm(Quaternion q) {
+    return sqrt(q.w*q.w + q.x*q.x + q.y*q.y + q.z*q.z);
+}
+
+Quaternion quaternion_normalize(Quaternion q) {
+    double n = quaternion_norm(q);
+    if (n > 0) return quaternion_div(q, n);
+    return q;
+}
+
+Quaternion quaternion_inverse(Quaternion q) {
+    double n2 = quaternion_dot(q, q);
+    if (n2 > 0) return quaternion_div(quaternion_conjugate(q), n2);
+    return q;
+}
+
+// Slerp (spherical linear interpolation)
+Quaternion quaternion_slerp(Quaternion a, Quaternion b, double t) {
+    double dot = quaternion_dot(a, b);
+    if (dot < 0) {
+        b = quaternion_scale(b, -1);
+        dot = -dot;
+    }
+    if (dot > 0.9995) {
+        Quaternion result = quaternion_add(quaternion_scale(a, 1-t), quaternion_scale(b, t));
+        return quaternion_normalize(result);
+    }
+    double theta_0 = acos(dot);
+    double theta = theta_0 * t;
+    double sin_theta = sin(theta);
+    double sin_theta_0 = sin(theta_0);
+    double s0 = cos(theta) - dot * sin_theta / sin_theta_0;
+    double s1 = sin_theta / sin_theta_0;
+    return quaternion_add(quaternion_scale(a, s0), quaternion_scale(b, s1));
+}
+
+// Axis-angle conversion
+void quaternion_to_axis_angle(Quaternion q, double* axis_out, double* angle_out) {
+    if (!axis_out || !angle_out) return;
+    if (q.w > 1) q = quaternion_normalize(q);
+    *angle_out = 2 * acos(q.w);
+    double s = sqrt(1 - q.w*q.w);
+    if (s < 1e-8) {
+        axis_out[0] = 1; axis_out[1] = 0; axis_out[2] = 0;
+    } else {
+        axis_out[0] = q.x / s;
+        axis_out[1] = q.y / s;
+        axis_out[2] = q.z / s;
+    }
+}
+
+Quaternion quaternion_from_axis_angle(const double* axis, double angle) {
+    double s = sin(angle/2);
+    return (Quaternion){cos(angle/2), axis[0]*s, axis[1]*s, axis[2]*s};
+}
+
+// Euler conversion (ZYX order)
+void quaternion_to_euler(Quaternion q, double* roll, double* pitch, double* yaw) {
+    // roll (x), pitch (y), yaw (z)
+    double ysqr = q.y * q.y;
+    // roll (x-axis rotation)
+    double t0 = +2.0 * (q.w * q.x + q.y * q.z);
+    double t1 = +1.0 - 2.0 * (q.x * q.x + ysqr);
+    if (roll) *roll = atan2(t0, t1);
+    // pitch (y-axis rotation)
+    double t2 = +2.0 * (q.w * q.y - q.z * q.x);
+    t2 = t2 > 1.0 ? 1.0 : t2;
+    t2 = t2 < -1.0 ? -1.0 : t2;
+    if (pitch) *pitch = asin(t2);
+    // yaw (z-axis rotation)
+    double t3 = +2.0 * (q.w * q.z + q.x * q.y);
+    double t4 = +1.0 - 2.0 * (ysqr + q.z * q.z);
+    if (yaw) *yaw = atan2(t3, t4);
+}
+
+Quaternion quaternion_from_euler(double roll, double pitch, double yaw) {
+    double cy = cos(yaw * 0.5);
+    double sy = sin(yaw * 0.5);
+    double cp = cos(pitch * 0.5);
+    double sp = sin(pitch * 0.5);
+    double cr = cos(roll * 0.5);
+    double sr = sin(roll * 0.5);
+    Quaternion q;
+    q.w = cr * cp * cy + sr * sp * sy;
+    q.x = sr * cp * cy - cr * sp * sy;
+    q.y = cr * sp * cy + sr * cp * sy;
+    q.z = cr * cp * sy - sr * sp * cy;
+    return q;
+}
+
+void quaternion_to_matrix(Quaternion q, double m[3][3]) {
+    q = quaternion_normalize(q);
+    double xx = q.x * q.x, yy = q.y * q.y, zz = q.z * q.z;
+    double xy = q.x * q.y, xz = q.x * q.z, yz = q.y * q.z;
+    double wx = q.w * q.x, wy = q.w * q.y, wz = q.w * q.z;
+    m[0][0] = 1 - 2 * (yy + zz);
+    m[0][1] = 2 * (xy - wz);
+    m[0][2] = 2 * (xz + wy);
+    m[1][0] = 2 * (xy + wz);
+    m[1][1] = 1 - 2 * (xx + zz);
+    m[1][2] = 2 * (yz - wx);
+    m[2][0] = 2 * (xz - wy);
+    m[2][1] = 2 * (yz + wx);
+    m[2][2] = 1 - 2 * (xx + yy);
+}
+
+Quaternion quaternion_from_matrix(const double m[3][3]) {
+    Quaternion q;
+    double trace = m[0][0] + m[1][1] + m[2][2];
+    if (trace > 0) {
+        double s = 0.5 / sqrt(trace + 1.0);
+        q.w = 0.25 / s;
+        q.x = (m[2][1] - m[1][2]) * s;
+        q.y = (m[0][2] - m[2][0]) * s;
+        q.z = (m[1][0] - m[0][1]) * s;
+    } else {
+        if (m[0][0] > m[1][1] && m[0][0] > m[2][2]) {
+            double s = 2.0 * sqrt(1.0 + m[0][0] - m[1][1] - m[2][2]);
+            q.w = (m[2][1] - m[1][2]) / s;
+            q.x = 0.25 * s;
+            q.y = (m[0][1] + m[1][0]) / s;
+            q.z = (m[0][2] + m[2][0]) / s;
+        } else if (m[1][1] > m[2][2]) {
+            double s = 2.0 * sqrt(1.0 + m[1][1] - m[0][0] - m[2][2]);
+            q.w = (m[0][2] - m[2][0]) / s;
+            q.x = (m[0][1] + m[1][0]) / s;
+            q.y = 0.25 * s;
+            q.z = (m[1][2] + m[2][1]) / s;
+        } else {
+            double s = 2.0 * sqrt(1.0 + m[2][2] - m[0][0] - m[1][1]);
+            q.w = (m[1][0] - m[0][1]) / s;
+            q.x = (m[0][2] + m[2][0]) / s;
+            q.y = (m[1][2] + m[2][1]) / s;
+            q.z = 0.25 * s;
+        }
+    }
+    return quaternion_normalize(q);
+}
+
+int quaternion_is_normalized(Quaternion q, double tol) {
+    double n = quaternion_norm(q);
+    return fabs(n - 1.0) < tol;
+}
+
+double quaternion_angle_between(Quaternion a, Quaternion b) {
+    double dot = quaternion_dot(a, b);
+    if (dot > 1.0) dot = 1.0;
+    if (dot < -1.0) dot = -1.0;
+    return acos(fabs(dot)) * 2.0;
+}
+
+int quaternion_is_continuous(const Quaternion* seq, size_t count, double tol) {
+    if (!seq || count < 2) return 1;
+    for (size_t i = 1; i < count; ++i) {
+        if (quaternion_angle_between(seq[i-1], seq[i]) > tol) return 0;
+    }
+    return 1;
+}
+
+int quaternion_is_gimbal_lock(Quaternion q, double tol) {
+    // Gimbal lock if pitch is near +/-90 degrees
+    double roll, pitch, yaw;
+    quaternion_to_euler(q, &roll, &pitch, &yaw);
+    return fabs(fabs(pitch) - M_PI/2) < tol;
+}
+
+int quaternion_history_is_smooth(const QuaternionHistory* hist, double tol) {
+    if (!hist || hist->count < 2) return 1;
+    return quaternion_is_continuous(hist->quats, hist->count, tol);
+}
+
+int quaternion_history_has_flips(const QuaternionHistory* hist, double tol) {
+    if (!hist || hist->count < 2) return 0;
+    for (size_t i = 1; i < hist->count; ++i) {
+        if (quaternion_angle_between(hist->quats[i-1], hist->quats[i]) > tol) return 1;
+    }
+    return 0;
+}
+
+Quaternion quaternion_history_average(const QuaternionHistory* hist) {
+    // Use the aggregate function (weighted sum, normalized)
+    return quaternion_history_aggregate(hist);
+}
+
+// --- MISSING FUNCTION STUBS ---
+#include "geometry/utils.h"
+
+// Node locking API
+void node_lock(Node* node) { (void)node; /* TODO: implement */ }
+void node_unlock(Node* node) { (void)node; /* TODO: implement */ }
+int node_trylock(Node* node) { (void)node; return 0; /* TODO: implement */ }
+int node_is_locked(const Node* node) { (void)node; return 0; /* TODO: implement */ }
+
+// Geneology Lock Bank
+GeneologyLockBank* geneology_lockbank_create(void) { return NULL; /* TODO: implement */ }
+void geneology_lockbank_destroy(GeneologyLockBank* bank) { (void)bank; /* TODO: implement */ }
+void geneology_lockbank_request(GeneologyLockBank* bank, Node** nodes, size_t num_nodes) { (void)bank; (void)nodes; (void)num_nodes; /* TODO: implement */ }
+int geneology_lockbank_confirm(GeneologyLockBank* bank, Node** nodes, size_t num_nodes) { (void)bank; (void)nodes; (void)num_nodes; return 0; /* TODO: implement */ }
+void geneology_lockbank_release(GeneologyLockBank* bank, Node** nodes, size_t num_nodes) { (void)bank; (void)nodes; (void)num_nodes; /* TODO: implement */ }
+
+// Graph set operations
+size_t graph_set_union(Node** a, size_t a_count, Node** b, size_t b_count, Node** out_union, size_t out_cap) { (void)a; (void)a_count; (void)b; (void)b_count; (void)out_union; (void)out_cap; return 0; /* TODO: implement */ }
+size_t graph_set_intersection(Node** a, size_t a_count, Node** b, size_t b_count, Node** out_inter, size_t out_cap) { (void)a; (void)a_count; (void)b; (void)b_count; (void)out_inter; (void)out_cap; return 0; /* TODO: implement */ }
+size_t graph_set_difference(Node** a, size_t a_count, Node** b, size_t b_count, Node** out_diff, size_t out_cap) { (void)a; (void)a_count; (void)b; (void)b_count; (void)out_diff; (void)out_cap; return 0; /* TODO: implement */ }
+int graph_set_contains(Node** set, size_t set_count, Node* node) { (void)set; (void)set_count; (void)node; return 0; /* TODO: implement */ }
+
+// Node operator overrides
+Node* node_add(const Node* a, const Node* b) { (void)a; (void)b; return NULL; /* TODO: implement */ }
+Node* node_sub(const Node* a, const Node* b) { (void)a; (void)b; return NULL; /* TODO: implement */ }
+Node* node_mul(const Node* a, const Node* b) { (void)a; (void)b; return NULL; /* TODO: implement */ }
+Node* node_div(const Node* a, const Node* b) { (void)a; (void)b; return NULL; /* TODO: implement */ }
+Node* node_add_scalar(const Node* a, double s) { (void)a; (void)s; return NULL; /* TODO: implement */ }
+Node* node_mul_scalar(const Node* a, double s) { (void)a; (void)s; return NULL; /* TODO: implement */ }
+
+// Geneology operator overrides
+Geneology* geneology_union(const Geneology* a, const Geneology* b) { (void)a; (void)b; return NULL; /* TODO: implement */ }
+Geneology* geneology_intersection(const Geneology* a, const Geneology* b) { (void)a; (void)b; return NULL; /* TODO: implement */ }
+Geneology* geneology_difference(const Geneology* a, const Geneology* b) { (void)a; (void)b; return NULL; /* TODO: implement */ }
+Geneology* geneology_symmetric_difference(const Geneology* a, const Geneology* b) { (void)a; (void)b; return NULL; /* TODO: implement */ }
+Geneology* geneology_complement(const Geneology* a, const Geneology* universe) { (void)a; (void)universe; return NULL; /* TODO: implement */ }
 

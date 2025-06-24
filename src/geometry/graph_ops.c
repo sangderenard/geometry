@@ -1,5 +1,6 @@
 #include "geometry/graph_ops.h"
 #include <stddef.h>
+#include "geometry/utils.h"
 
 // Forward declaration for path hash dictionary
 // This will be used for relationship path caching in Geneology

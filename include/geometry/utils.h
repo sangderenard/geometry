@@ -1,5 +1,6 @@
 #ifndef GEOMETRY_UTILS_H
 #define GEOMETRY_UTILS_H
+#endif
 
 #ifdef __cplusplus
 extern "C" {
@@ -16,6 +17,7 @@ typedef pthread_mutex_t node_mutex_t;
 #endif
 
 #include "geometry/stencil.h"
+#include "geometry/dag.h"
 
 struct Node;
 
@@ -43,6 +45,40 @@ typedef struct {
     int relation;
 } NodeLink;
 
+// --- StencilSet abstraction ---
+// Relationship type enum
+typedef enum {
+    STENCIL_RELATION_SAME_COORDINATE_SET = 0,
+    STENCIL_RELATION_DIFFERENT_COORDINATE_SET = 1,
+    STENCIL_RELATION_ORTHOGONAL = 2,
+    STENCIL_RELATION_COSINE_SIMILARITY = 3,
+    STENCIL_RELATION_NODE_SHARING = 4,
+    STENCIL_RELATION_CUSTOM = 100
+} StencilRelationType;
+
+// Relationship struct for each pair
+typedef struct StencilRelation {
+    int type; // StencilRelationType
+    void* context; // e.g. node set, parameters
+    double (*similarity_fn)(const GeneralStencil*, const GeneralStencil*, void* context); // optional
+} StencilRelation;
+
+typedef struct StencilSet {
+    GeneralStencil** stencils;
+    size_t count, cap;
+    // Relationship matrix: relation[i][j] describes the relationship from stencil i to j
+    StencilRelation** relation;
+} StencilSet;
+
+// Helper to wrap a single stencil as a set
+StencilSet* stencilset_wrap_single(GeneralStencil* stencil);
+// Initialize a fully connected relationship graph for the set (all-to-all, with a default rule)
+void stencilset_init_fully_connected(StencilSet* set, int default_relation_type);
+
+// Negotiate a bond between two nodes at given stencil pole indices
+// Returns the relationship type (enum), fills out relation if not NULL
+int stencilset_negotiate_bond(const StencilSet* a, size_t pole_a, const StencilSet* b, size_t pole_b, StencilRelation* out_relation);
+
 // A label for a neighbor relationship (can be explicit or auto-generated)
 typedef struct NeighborLabel {
     char* label;           // e.g. "parent", "child", "neighbor_0", etc.
@@ -59,8 +95,68 @@ typedef struct NeighborEntry {
 typedef struct NeighborMap {
     NeighborEntry* entries;
     size_t count, cap;
-    GeneralStencil* stencil; // The stencil defining the neighbor arrangement (optional)
+    // StencilSet for neighbor arrangement (can be a set of stencils, not just one)
+    StencilSet* stencil_set; // The set of stencils defining the neighbor arrangement (optional)
 } NeighborMap;
+
+// --- Quaternion and QuaternionHistory ---
+typedef struct Quaternion {
+    double w, x, y, z;
+} Quaternion;
+
+typedef double (*QuaternionDecayFn)(size_t idx, size_t window_size, void* user_data);
+
+typedef struct QuaternionHistory {
+    Quaternion* quats;         // Array of quaternions
+    size_t count;              // Number of valid quaternions
+    size_t cap;                // Allocated capacity
+    size_t window_size;        // Max window size (0 = unlimited)
+    QuaternionDecayFn decay_fn;// Optional decay function (NULL = moving window)
+    void* decay_user_data;     // Optional user data for decay
+} QuaternionHistory;
+
+// Quaternion history API
+QuaternionHistory* quaternion_history_create(size_t window_size, QuaternionDecayFn decay_fn, void* user_data);
+void quaternion_history_destroy(QuaternionHistory* hist);
+void quaternion_history_add(QuaternionHistory* hist, Quaternion q);
+Quaternion quaternion_history_aggregate(const QuaternionHistory* hist);
+
+// --- Quaternion Operators and Orientation Validators ---
+// Basic arithmetic
+Quaternion quaternion_add(Quaternion a, Quaternion b);
+Quaternion quaternion_sub(Quaternion a, Quaternion b);
+Quaternion quaternion_mul(Quaternion a, Quaternion b); // Hamilton product
+Quaternion quaternion_scale(Quaternion q, double s);
+Quaternion quaternion_div(Quaternion q, double s);
+
+// Properties and transforms
+Quaternion quaternion_conjugate(Quaternion q);
+Quaternion quaternion_inverse(Quaternion q);
+double quaternion_norm(Quaternion q);
+Quaternion quaternion_normalize(Quaternion q);
+double quaternion_dot(Quaternion a, Quaternion b);
+
+// Interpolation
+Quaternion quaternion_slerp(Quaternion a, Quaternion b, double t);
+
+// Conversion
+void quaternion_to_axis_angle(Quaternion q, double* axis_out, double* angle_out);
+Quaternion quaternion_from_axis_angle(const double* axis, double angle);
+void quaternion_to_euler(Quaternion q, double* roll, double* pitch, double* yaw);
+Quaternion quaternion_from_euler(double roll, double pitch, double yaw);
+void quaternion_to_matrix(Quaternion q, double m[3][3]);
+Quaternion quaternion_from_matrix(const double m[3][3]);
+
+// Orientation validators
+int quaternion_is_normalized(Quaternion q, double tol);
+double quaternion_angle_between(Quaternion a, Quaternion b);
+int quaternion_is_continuous(const Quaternion* seq, size_t count, double tol);
+int quaternion_is_gimbal_lock(Quaternion q, double tol);
+
+// Quaternion history evaluators
+int quaternion_history_is_smooth(const QuaternionHistory* hist, double tol);
+int quaternion_history_has_flips(const QuaternionHistory* hist, double tol);
+Quaternion quaternion_history_average(const QuaternionHistory* hist);
 
 typedef struct Node {
     char* id;
@@ -106,6 +202,8 @@ typedef struct Node {
     struct Emergence* emergence;
 
     NeighborMap neighbor_map; // Flexible, labeled neighbor mapping
+
+    QuaternionHistory* orientation_history; // Optional orientation history
 } Node;
 
 // --- Emergence structure for node-level adaptation ---
@@ -166,6 +264,14 @@ void geneology_remove_node(Geneology* g, Node* node);
 size_t geneology_num_nodes(const Geneology* g);
 Node* geneology_get_node(const Geneology* g, size_t idx);
 
+// --- Additional Geneology faculties ---
+void geneology_merge(Geneology* dest, const Geneology* src);
+void geneology_find_ancestors(const Geneology* g, const Node* node, Node** out, size_t* out_count);
+void geneology_find_descendants(const Geneology* g, const Node* node, Node** out, size_t* out_count);
+void geneology_extract_lineage(const Geneology* g, const Node* node, Node** out, size_t* out_count);
+void geneology_extract_slice_2d(const Geneology* g, const Node* root, size_t gen_start, size_t gen_end, size_t sib_start, size_t sib_end, Node** out, size_t* out_count);
+Node* geneology_clone_subtree(const Geneology* g, const Node* node);
+
 // Traversal (DFS, BFS)
 typedef void (*GeneologyVisitFn)(Node* node, void* user);
 void geneology_traverse_dfs(Geneology* g, Node* root, GeneologyVisitFn visit, void* user);
@@ -216,6 +322,10 @@ Node* node_get_neighbor(const Node* node, size_t pole_index);
 Node* node_get_neighbor_by_label(const Node* node, const char* label);
 // Ensure bidirectional link (or hold/drop if not possible)
 int node_ensure_bidirectional_neighbor(Node* node, Node* neighbor, size_t pole_index, const char* label, int require_bidirectional);
+
+// Procedural relationship naming for stencil-based relationships
+// Returns a malloc'd string describing the relationship (caller must free)
+char* node_generate_stencil_relation_name(const GeneralStencil* stencil, size_t pole_index, const char* base_type);
 
 // =====================
 // LOCKING POLICY AND DESIGN
@@ -386,143 +496,17 @@ typedef struct {
     size_t num_levels;
 } DagManifest;
 
-// The DAG structure: an array of manifests (multiple circuits/views)
-typedef struct Dag Dag;
-
-struct Dag {
-    DagManifest* manifests
-        DagManifest* manifests;
+// A manifest: an array of levels (ordered by causal index)
+typedef struct Dag {
+    DagManifest* manifests;
     size_t num_manifests, cap_manifests;
-};
+} Dag;
 
 // Manifest management
 Dag* dag_create(void);
 void dag_destroy(Dag* dag);
 void dag_add_manifest(Dag* dag, DagManifest* manifest);
-size_t dag_num_manifests(const Dag* dag);
-DagManifest* dag_get_manifest(const Dag* dag, size_t idx);
-size_t dag_manifest_num_levels(const DagManifest* manifest);
-DagManifestLevel* dag_manifest_get_level(const DagManifest* manifest, size_t level_idx);
-size_t dag_level_num_mappings(const DagManifestLevel* level);
-DagManifestMapping* dag_level_get_mapping(const DagManifestLevel* level);
-void dag_gather(const DagManifestMapping* mapping, void* out);
-void dag_scatter(const DagManifestMapping* mapping, void* data);
-
-// --- NeuralNetwork structure ---
-
-// Forward/backward function signatures for a mapping step
-typedef void (*NNForwardFn)(Node** inputs, size_t num_inputs, Node** outputs, size_t num_outputs, void* user);
-typedef void (*NNBackwardFn)(Node** inputs, size_t num_inputs, Node** outputs, size_t num_outputs, void* user);
-
-// A mapping step in the network (corresponds to a DagManifestMapping, but with hooks)
-typedef struct {
-    DagManifestMapping* mapping;
-    NNForwardFn forward;
-    NNBackwardFn backward;
-    void* user_data; // e.g. activation/normalization params
-} NeuralNetworkStep;
-
-// A repository of available functions for mapping steps
-#define NN_MAX_FUNCTIONS 32
-
-typedef struct {
-    const char* name;
-    NNForwardFn forward;
-    NNBackwardFn backward;
-} NeuralNetworkFunctionEntry;
-
-typedef struct {
-    NeuralNetworkFunctionEntry entries[NN_MAX_FUNCTIONS];
-    size_t num_entries;
-} NeuralNetworkFunctionRepo;
-
-// The neural network object: an array of DAGs, and steps for each DAG
-#define NN_MAX_DAGS 8
-#define NN_MAX_STEPS 256
-
-typedef struct {
-    Dag* dags[NN_MAX_DAGS];
-    size_t num_dags;
-    NeuralNetworkStep* steps[NN_MAX_DAGS][NN_MAX_STEPS];
-    size_t num_steps[NN_MAX_DAGS];
-    NeuralNetworkFunctionRepo function_repo;
-} NeuralNetwork;
-
-// Neural network management
-NeuralNetwork* neuralnetwork_create(void);
-void neuralnetwork_destroy(NeuralNetwork* nn);
-
-// Register a function in the repo
-void neuralnetwork_register_function(NeuralNetwork* nn, const char* name, NNForwardFn forward, NNBackwardFn backward);
-
-// Attach a function to a step
-void neuralnetwork_set_step_function(NeuralNetwork* nn, size_t dag_idx, size_t step_idx, const char* function_name, void* user_data);
-
-// Forward/backward wrappers
-void neuralnetwork_forward(NeuralNetwork* nn);
-void neuralnetwork_backward(NeuralNetwork* nn);
-
-// Step-level forward/backward
-void neuralnetwork_forwardstep(NeuralNetwork* nn, size_t dag_idx, size_t step_idx);
-void neuralnetwork_backwardstep(NeuralNetwork* nn, size_t dag_idx, size_t step_idx);
-
-/*
-Diagram:
-
-NeuralNetwork
-  |-- dags[]: Dag
-  |-- steps[dag][step]: NeuralNetworkStep
-  |-- function_repo: {name, forward, backward}
-
-Each NeuralNetworkStep:
-  - mapping: DagManifestMapping (inputs/outputs)
-  - forward/backward: function pointers (activation, normalization, etc)
-  - user_data: params for the function
-
-Execution:
-  - neuralnetwork_forward: for each dag, for each step, call step->forward(inputs, outputs, user_data)
-  - neuralnetwork_backward: for each dag, for each step (reverse), call step->backward(...)
-
-Data:
-  - Node features (Eigen/ONNX tensors) are used for all data movement and computation
-*/
-
-// =====================
-// Node Operator Overrides (Declarations Only)
-// =====================
-// Feature-wise arithmetic: add, subtract, multiply, divide, etc.
-Node* node_add(const Node* a, const Node* b);      // a + b (feature-wise)
-Node* node_sub(const Node* a, const Node* b);      // a - b
-Node* node_mul(const Node* a, const Node* b);      // a * b
-Node* node_div(const Node* a, const Node* b);      // a / b
-// Scalar versions
-Node* node_add_scalar(const Node* a, double s);    // a + s
-Node* node_mul_scalar(const Node* a, double s);    // a * s
-// ...add more as needed
-
-// =====================
-// Geneology Operator Overrides (Declarations Only)
-// =====================
-// Set-theoretic operations: union, intersection, difference, etc.
-Geneology* geneology_union(const Geneology* a, const Geneology* b);           // a | b
-Geneology* geneology_intersection(const Geneology* a, const Geneology* b);    // a & b
-Geneology* geneology_difference(const Geneology* a, const Geneology* b);      // a - b
-// Special set-level operations (no direct operator analog)
-Geneology* geneology_symmetric_difference(const Geneology* a, const Geneology* b); // a ? b
-Geneology* geneology_complement(const Geneology* a, const Geneology* universe);    // ~a (relative to universe)
-// ...add more as needed
-
-// =====================
-// Special Set-Level Operations Placeholder
-// =====================
-// These operations act on sets of nodes, indifferent to internal relationships.
-// Add declarations for any special set-level abstractions here.
-
-// Returns the inverse of a relationship type (e.g., parent->child becomes child->parent)
-int geneology_invert_relation(int relation_type);
 
 #ifdef __cplusplus
 }
 #endif
-
-#endif // GEOMETRY_UTILS_H

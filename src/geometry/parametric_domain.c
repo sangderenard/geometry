@@ -3,6 +3,10 @@
 #include <string.h>
 #include <math.h>
 
+#ifndef M_PI
+#define M_PI 3.14159265358979323846
+#endif
+
 ParametricDomain* parametric_domain_create(size_t dimensions) {
     if (dimensions == 0 || dimensions > PD_MAX_DIM) return NULL;
     ParametricDomain* pd = (ParametricDomain*)malloc(sizeof(ParametricDomain));
@@ -121,7 +125,7 @@ void parametric_domain_wrap_point(const ParametricDomain* pd, double* params) {
                 }
                 break;
             case PD_PERIODIC_POLARIZED:
-                params[i] = s + 0.5 * r * (1 - cos((params[i] - s) * 2 * M_PI / r));
+                params[i] = s + 0.5 * r * (1 - cos((params[i] - s) * 2 * 3.14159265358979323846 / r));
                 break;
             default: break;
         }
