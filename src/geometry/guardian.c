@@ -173,3 +173,46 @@ size_t guardian_receive(TokenGuardian* g, unsigned long to, void* buffer, size_t
     guardian_mutex_unlock(&g->mutex);
     return 0;
 }
+
+// === Simple memory helpers ===
+static node_mutex_t mem_mutex;
+static int mem_mutex_initd = 0;
+
+static void ensure_mem_mutex(void) {
+    if (!mem_mutex_initd) {
+        guardian_mutex_init(&mem_mutex);
+        mem_mutex_initd = 1;
+    }
+}
+
+void* guardian_malloc_simple(size_t size) {
+    ensure_mem_mutex();
+    guardian_mutex_lock(&mem_mutex);
+    void* p = malloc(size);
+    guardian_mutex_unlock(&mem_mutex);
+    return p;
+}
+
+void* guardian_calloc_simple(size_t count, size_t size) {
+    ensure_mem_mutex();
+    guardian_mutex_lock(&mem_mutex);
+    void* p = calloc(count, size);
+    guardian_mutex_unlock(&mem_mutex);
+    return p;
+}
+
+void* guardian_realloc_simple(void* ptr, size_t size) {
+    ensure_mem_mutex();
+    guardian_mutex_lock(&mem_mutex);
+    void* p = realloc(ptr, size);
+    guardian_mutex_unlock(&mem_mutex);
+    return p;
+}
+
+void guardian_free_simple(void* ptr) {
+    if (!ptr) return;
+    ensure_mem_mutex();
+    guardian_mutex_lock(&mem_mutex);
+    free(ptr);
+    guardian_mutex_unlock(&mem_mutex);
+}

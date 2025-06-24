@@ -54,6 +54,12 @@ void guardian_free(TokenGuardian* g, unsigned long token);
 void guardian_send(TokenGuardian* g, unsigned long from, unsigned long to, const void* data, size_t size);
 size_t guardian_receive(TokenGuardian* g, unsigned long to, void* buffer, size_t max_size);
 
+/* Simple thread-safe wrappers for raw memory operations */
+void* guardian_malloc_simple(size_t size);
+void* guardian_calloc_simple(size_t count, size_t size);
+void* guardian_realloc_simple(void* ptr, size_t size);
+void guardian_free_simple(void* ptr);
+
 #ifdef __cplusplus
 }
 #endif
