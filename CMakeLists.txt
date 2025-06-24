@@ -8,7 +8,13 @@ include_directories(include third_party/eigen)
 file(GLOB_RECURSE CPP_SOURCES "src/*.cpp")
 list(FILTER CPP_SOURCES EXCLUDE REGEX "dec_toolkit_header.cpp$")
 file(GLOB_RECURSE C_SOURCES "src/*.c")
+list(FIND C_SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/src/geometry/guardian.c" _guardian_idx)
+if(_guardian_idx EQUAL -1)
+    list(APPEND C_SOURCES src/geometry/guardian.c)
+endif()
+set_source_files_properties(src/geometry/guardian.c PROPERTIES LANGUAGE C)
 add_library(vecdec ${CPP_SOURCES} ${C_SOURCES})
+target_sources(vecdec PRIVATE src/geometry/guardian.c)
 
 add_library(geometry_stencil
     src/geometry/stencil.c
