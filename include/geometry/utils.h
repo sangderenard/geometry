@@ -17,6 +17,7 @@ typedef pthread_mutex_t node_mutex_t;
 
 #include "geometry/stencil.h"
 #include "geometry/dag.h"
+#include "geometry/guardian.h"
 
 struct Node;
 
@@ -112,12 +113,14 @@ typedef struct QuaternionHistory {
     size_t window_size;        // Max window size (0 = unlimited)
     QuaternionDecayFn decay_fn;// Optional decay function (NULL = moving window)
     void* decay_user_data;     // Optional user data for decay
+    unsigned long __hist_token; // Guardian token for this struct
+    unsigned long __quats_token; // Guardian token for quats array
 } QuaternionHistory;
 
 // Quaternion history API
-QuaternionHistory* quaternion_history_create(size_t window_size, QuaternionDecayFn decay_fn, void* user_data);
-void quaternion_history_destroy(QuaternionHistory* hist);
-void quaternion_history_add(QuaternionHistory* hist, Quaternion q);
+QuaternionHistory* quaternion_history_create(TokenGuardian* guardian, size_t window_size, QuaternionDecayFn decay_fn, void* user_data);
+void quaternion_history_destroy(TokenGuardian* guardian, QuaternionHistory* hist);
+void quaternion_history_add(TokenGuardian* guardian, QuaternionHistory* hist, Quaternion q);
 Quaternion quaternion_history_aggregate(const QuaternionHistory* hist);
 
 // --- Quaternion Operators and Orientation Validators ---
@@ -164,45 +167,22 @@ typedef struct Node {
     double activation_sum;
     double activation_sq_sum;
 
-    // Multidimensional stencil arrays for relationships
-    struct Node*** parents;      // [dim][index] array of parent pointers
-    size_t* num_parents;        // [dim] number of parents per dimension
-    size_t num_dims_parents;    // number of parent dimensions
+    // All dynamic fields are now Guardian tokens
+    unsigned long parents_token;      // Token for multidimensional parents list
+    unsigned long children_token;     // Token for multidimensional children list
+    unsigned long left_siblings_token;// Token for multidimensional left siblings list
+    unsigned long right_siblings_token;// Token for multidimensional right siblings list
 
-    struct Node*** children;     // [dim][index] array of child pointers
-    size_t* num_children;        // [dim] number of children per dimension
-    size_t num_dims_children;    // number of child dimensions
-
-    struct Node*** left_siblings;  // [dim][index] array of left sibling pointers
-    size_t* num_left_siblings;     // [dim] number of left siblings per dimension
-    size_t num_dims_left_siblings; // number of left sibling dimensions
-
-    struct Node*** right_siblings; // [dim][index] array of right sibling pointers
-    size_t* num_right_siblings;    // [dim] number of right siblings per dimension
-    size_t num_dims_right_siblings;// number of right sibling dimensions
-
-    // Canonical relationship structure: links only
-    NodeLink* forward_links;
-    NodeLink* backward_links;
-    size_t num_forward_links, cap_forward_links;
-    size_t num_backward_links, cap_backward_links;
-
-    NodeRelation* relations;
-    size_t num_relations, cap_relations;
-
-    char** features;
-    size_t num_features, cap_features;
-
-    NodeExposure* exposures;
-    size_t num_exposures, cap_exposures;
+    unsigned long forward_links_token; // Token for list of NodeLink
+    unsigned long backward_links_token;// Token for list of NodeLink
+    unsigned long relations_token;     // Token for list of NodeRelation
+    unsigned long features_token;      // Token for list of feature strings
+    unsigned long exposures_token;     // Token for list of NodeExposure
 
     node_mutex_t mutex;
-
     struct Emergence* emergence;
-
-    NeighborMap neighbor_map; // Flexible, labeled neighbor mapping
-
-    QuaternionHistory* orientation_history; // Optional orientation history
+    unsigned long neighbor_map_token; // Token for NeighborMap
+    unsigned long orientation_history_token; // Token for QuaternionHistory
 } Node;
 
 // --- Emergence structure for node-level adaptation ---
@@ -242,18 +222,11 @@ void emergence_resolve(Emergence* e);
 void emergence_update(Emergence* e, Node* node, double activation, uint64_t global_step, uint64_t timestamp);
 
 // --- Geneology structure ---
-
-// --- Path hash dictionary for relationship path caching ---
-// This dictionary will map a path hash (e.g., from a path vector or encoding)
-// to a relationship descriptor or cached result. Use a suitable hash map structure.
-// Implementation and type details to be defined later.
-typedef struct PathHashDict PathHashDict;
-
 typedef struct Geneology {
-    Node** nodes;
-    size_t num_nodes, cap_nodes;
+    unsigned long nodes_token; // Token for list of Node tokens
+    size_t num_nodes;
     // Path hash dictionary for fast relationship queries
-    PathHashDict* path_hash_dict; // Guidance: implement as a hash map from path hash to relationship info
+    unsigned long path_hash_dict_token; // Token for hash map (PathHashDict)
 } Geneology;
 
 Geneology* geneology_create(void);
@@ -280,24 +253,24 @@ void geneology_traverse_bfs(Geneology* g, Node* root, GeneologyVisitFn visit, vo
 void geneology_sort(Geneology* g, int (*cmp)(const Node*, const Node*));
 Node* geneology_search(Geneology* g, int (*pred)(const Node*, void*), void* user);
 
-Node* node_create(void);
-void node_destroy(Node* node);
-Node* node_split(const Node* src);
+Node* node_create(TokenGuardian* guardian);
+void node_destroy(TokenGuardian* guardian, Node* node);
+Node* node_split(TokenGuardian* guardian, const Node* src);
 int node_should_split(Node* n);
 void node_record_activation(Node* n, double act);
 
-size_t node_add_relation(Node* node, int type, NodeForwardFn forward, NodeBackwardFn backward);
+size_t node_add_relation(TokenGuardian* guardian, Node* node, int type, NodeForwardFn forward, NodeBackwardFn backward);
 NodeRelation* node_get_relation(const Node* node, size_t index);
 
-size_t node_add_feature(Node* node, const char* feature);
+size_t node_add_feature(TokenGuardian* guardian, Node* node, const char* feature);
 const char* node_get_feature(const Node* node, size_t index);
 
-size_t node_add_exposure(Node* node, NodeProduceFn produce, NodeReverseFn reverse);
+size_t node_add_exposure(TokenGuardian* guardian, Node* node, NodeProduceFn produce, NodeReverseFn reverse);
 NodeExposure* node_get_exposure(const Node* node, size_t index);
 
-size_t node_add_forward_link(Node* node, Node* link, int relation);
-size_t node_add_backward_link(Node* node, Node* link, int relation);
-size_t node_add_bidirectional_link(Node* a, Node* b, int relation);
+size_t node_add_forward_link(TokenGuardian* guardian, Node* node, Node* link, int relation);
+size_t node_add_backward_link(TokenGuardian* guardian, Node* node, Node* link, int relation);
+size_t node_add_bidirectional_link(TokenGuardian* guardian, Node* a, Node* b, int relation);
 int geneology_invert_relation(int relation_type);
 const NodeLink* node_get_forward_link(const Node* node, size_t index);
 const NodeLink* node_get_backward_link(const Node* node, size_t index);
@@ -313,19 +286,27 @@ void node_gather_from_ancestors(Node* node, void* out);
 
 // --- Neighbor Map API ---
 // Attach a neighbor at a given pole (by index) with a label (explicit or auto-generated)
-int node_attach_neighbor(Node* node, Node* neighbor, size_t pole_index, const char* label);
+int node_attach_neighbor(TokenGuardian* guardian, Node* node, Node* neighbor, size_t pole_index, const char* label);
 // Detach a neighbor by pole or label
-int node_detach_neighbor(Node* node, size_t pole_index);
-int node_detach_neighbor_by_label(Node* node, const char* label);
+int node_detach_neighbor(TokenGuardian* guardian, Node* node, size_t pole_index);
+int node_detach_neighbor_by_label(TokenGuardian* guardian, Node* node, const char* label);
 // Query a neighbor by pole or label
 Node* node_get_neighbor(const Node* node, size_t pole_index);
 Node* node_get_neighbor_by_label(const Node* node, const char* label);
 // Ensure bidirectional link (or hold/drop if not possible)
-int node_ensure_bidirectional_neighbor(Node* node, Node* neighbor, size_t pole_index, const char* label, int require_bidirectional);
+int node_ensure_bidirectional_neighbor(TokenGuardian* guardian, Node* node, Node* neighbor, size_t pole_index, const char* label, int require_bidirectional);
 
 // Procedural relationship naming for stencil-based relationships
 // Returns a malloc'd string describing the relationship (caller must free)
 char* node_generate_stencil_relation_name(const GeneralStencil* stencil, size_t pole_index, const char* base_type);
+
+// =====================
+// CONCURRENCY AND DEREFERENCING POLICY
+// =====================
+/*
+All access to dynamic primitives (e.g., arrays, neighbors, links) must be performed via concurrency-checked guardian APIs.
+Direct pointer dereferencing for dynamic primitives is not allowed. Traversal, neighbor access, and dereferencing must use guardian APIs that return tokens or concurrency-checked access, not raw pointers.
+*/
 
 // =====================
 // LOCKING POLICY AND DESIGN

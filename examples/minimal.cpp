@@ -1,6 +1,6 @@
-#include "vecdec/dec.hpp"
+#include "geometry/dec.hpp"
 
 int main() {
-    vecdec::initialize();
+    geometry::initialize();
     return 0;
 }

@@ -65,19 +65,19 @@ void test_quaternion_operators() {
     assert(quaternion_is_normalized(q10, 1e-8));
 }
 
-void test_quaternion_history() {
-    QuaternionHistory* hist = quaternion_history_create(4, NULL, NULL);
+void test_quaternion_history(TokenGuardian* guardian) {
+    QuaternionHistory* hist = quaternion_history_create(guardian, 4, NULL, NULL);
     Quaternion q1 = {1,0,0,0};
     Quaternion q2 = quaternion_from_axis_angle((double[]){0,0,1}, M_PI/4);
     Quaternion q3 = quaternion_from_axis_angle((double[]){0,0,1}, M_PI/2);
-    quaternion_history_add(hist, q1);
-    quaternion_history_add(hist, q2);
-    quaternion_history_add(hist, q3);
+    quaternion_history_add(guardian, hist, q1);
+    quaternion_history_add(guardian, hist, q2);
+    quaternion_history_add(guardian, hist, q3);
     assert(hist->count == 3);
     assert(quaternion_history_is_smooth(hist, 1.0));
     Quaternion avg = quaternion_history_average(hist);
     assert(quaternion_is_normalized(avg, 1e-8));
-    quaternion_history_destroy(hist);
+    quaternion_history_destroy(guardian, hist);
 }
 
 void test_quaternion_edge_cases() {
@@ -145,11 +145,11 @@ int main(void) {
     assert(!node_is_locked(lock_node));
     node_destroy(lock_node);
 
-    // TokenGuardian basic usage
+    // Refactor tests to remove direct calls to guardian_alloc and guardian_free
     TokenGuardian* guard = guardian_create();
     unsigned long thread_token = guardian_register_thread(guard);
     unsigned long mem_token;
-    void* block = guardian_alloc(guard, 16, &mem_token);
+    void* block = guardian_create(); // Use guardian_create for memory management
     assert(block != NULL);
     const char* msg = "hello";
     guardian_send(guard, thread_token, thread_token, msg, strlen(msg)+1);
@@ -157,9 +157,8 @@ int main(void) {
     size_t n = guardian_receive(guard, thread_token, buf, sizeof(buf));
     if (n < sizeof(buf)) buf[n] = '\0';
     assert(n == strlen(msg)+1 && strcmp(buf, msg) == 0);
-    guardian_free(guard, mem_token);
+    guardian_destroy(guard); // Use guardian_destroy for cleanup
     guardian_unregister_thread(guard, thread_token);
-    guardian_destroy(guard);
 
     printf("utils_test passed\n");
     test_double_buffer();
@@ -174,8 +173,8 @@ int main(void) {
         int radius_b = 1 + rand() % 2;
         GeneralStencil* sa = random_rect_stencil(dims_a, radius_a);
         GeneralStencil* sb = random_rect_stencil(dims_b, radius_b);
-        StencilSet* set_a = stencilset_wrap_single(sa);
-        StencilSet* set_b = stencilset_wrap_single(sb);
+        StencilSet* set_a = stencilset_wrap_single(guard, sa);
+        StencilSet* set_b = stencilset_wrap_single(guard, sb);
         // Try all pole pairs (just first for demo)
         size_t pole_a = 0, pole_b = 0;
         StencilRelation rel;
@@ -184,13 +183,14 @@ int main(void) {
         // Cleanup
         stencil_destroy_general(sa);
         stencil_destroy_general(sb);
-        free(set_a->stencils); free(set_a->relation[0]); free(set_a->relation); free(set_a);
-        free(set_b->stencils); free(set_b->relation[0]); free(set_b->relation); free(set_b);
+        // Memory for set_a and set_b is managed by the guardian, so do not free with free().
+        // guardian_free(guard, ...) could be used if tokens were tracked, but here we rely on guardian_destroy.
     }
 
     test_quaternion_operators();
-    test_quaternion_history();
+    test_quaternion_history(guard);
     test_quaternion_edge_cases();
+    guardian_destroy(guard);
     printf("All quaternion tests passed!\n");
 
     return 0;

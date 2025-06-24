@@ -61,39 +61,44 @@ void node_add_edge(Node* src, Node* dst, int relation) {
     //
     // This switch block can be extended as you add more relation types.
 
+    TokenGuardian* guardian = guardian_create(); // Ensure guardian is initialized
+
     switch (relation) {
         case EDGE_PARENT_CHILD_CONTIGUOUS:
             // Parent-child (contiguous): src is parent, dst is child
-            node_add_forward_link(src, dst, relation);   // src -> dst (child)
-            node_add_backward_link(dst, src, relation);  // dst -> src (parent)
+            node_add_forward_link(guardian, src, dst, relation);   // src -> dst (child)
+            node_add_backward_link(guardian, dst, src, relation);  // dst -> src (parent)
             break;
         case EDGE_LINEAGE_NONCONTIGUOUS:
             // Lineage (noncontiguous): e.g., ancestor/descendant
-            node_add_forward_link(src, dst, relation);
-            node_add_backward_link(dst, src, relation);
+            node_add_forward_link(guardian, src, dst, relation);
+            node_add_backward_link(guardian, dst, src, relation);
             break;
         case EDGE_SIBLING_LEFT_TO_RIGHT_CONTIGUOUS:
             // Sibling (contiguous): src is left sibling, dst is right sibling
-            node_add_forward_link(src, dst, relation);   // src -> dst (right)
-            node_add_backward_link(dst, src, relation);  // dst -> src (left)
+            node_add_forward_link(guardian, src, dst, relation);   // src -> dst (right)
+            node_add_backward_link(guardian, dst, src, relation);  // dst -> src (left)
             break;
         case EDGE_SIBLING_RIGHT_TO_LEFT_CONTIGUOUS:
             // Sibling (contiguous): src is right sibling, dst is left sibling
-            node_add_forward_link(src, dst, relation);   // src -> dst (left)
-            node_add_backward_link(dst, src, relation);  // dst -> src (right)
+            node_add_forward_link(guardian, src, dst, relation);   // src -> dst (left)
+            node_add_backward_link(guardian, dst, src, relation);  // dst -> src (right)
             break;
         case EDGE_SIBLING_SIBLING_NONCONTIGUOUS:
             // Sibling (noncontiguous): e.g., cousin or distant sibling
-            node_add_forward_link(src, dst, relation);
-            node_add_backward_link(dst, src, relation);
+            node_add_forward_link(guardian, src, dst, relation);
+            node_add_backward_link(guardian, dst, src, relation);
             break;
         case EDGE_ARBITRARY:
         default:
             // Arbitrary or unknown edge type: treat as generic bidirectional
-            node_add_forward_link(src, dst, relation);
-            node_add_backward_link(dst, src, relation);
+            node_add_forward_link(guardian, src, dst, relation);
+            node_add_backward_link(guardian, dst, src, relation);
             break;
     }
+
+    // Ensure guardian is destroyed after use
+    guardian_destroy(guardian);
 
     //
     // If you want to prevent duplicate edges, you could scan the forward/backward links first.

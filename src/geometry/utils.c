@@ -1,3 +1,11 @@
+// =====================
+// CONCURRENCY AND DEREFERENCING POLICY
+// =====================
+/*
+All access to dynamic primitives (e.g., arrays, neighbors, links) must be performed via concurrency-checked guardian APIs.
+Direct pointer dereferencing for dynamic primitives is not allowed. Traversal, neighbor access, and dereferencing must use guardian APIs that return tokens or concurrency-checked access, not raw pointers.
+*/
+
 #include "geometry/utils.h"
 #include "geometry/dag.h"
 #include "geometry/guardian.h"
@@ -16,76 +24,79 @@
 #endif
 
 // === Utility ===
-static void* grow_array(void* array, size_t elem_size, size_t* cap) {
+static void* grow_array(TokenGuardian* guardian, void* array, size_t elem_size, size_t* cap) {
     size_t new_cap = (*cap == 0) ? 4 : (*cap * 2);
-    void* new_arr = guardian_realloc_simple(array, new_cap * elem_size);
+    void* new_arr = guardian_realloc(guardian, array, new_cap * elem_size);
     if (new_arr) *cap = new_cap;
     return new_arr;
 }
 
 // Helper to add a node to a multidimensional array (e.g., parents, children, siblings)
-static void node_add_to_stencil(Node**** arr, size_t** num_arr, size_t* num_dims, size_t dim, Node* target) {
+static void node_add_to_stencil(TokenGuardian* guardian, unsigned long* arr_token, unsigned long* num_arr_token, size_t* num_dims, size_t dim, Node* target) {
     // Grow dimensions if needed
     if (dim >= *num_dims) {
         size_t old_dims = *num_dims;
         size_t new_dims = dim + 1;
-        Node*** tmp_arr = guardian_realloc_simple(*arr, new_dims * sizeof(Node**));
-        size_t* tmp_num = guardian_realloc_simple(*num_arr, new_dims * sizeof(size_t));
-        if (!tmp_arr || !tmp_num) {
-            guardian_free_simple(tmp_arr);
-            guardian_free_simple(tmp_num);
+        unsigned long tmp_arr_token, tmp_num_token;
+        guardian_list_resize(guardian, *arr_token, new_dims, &tmp_arr_token);
+        guardian_list_resize(guardian, *num_arr_token, new_dims, &tmp_num_token);
+        if (!tmp_arr_token || !tmp_num_token) {
+            guardian_list_destroy(guardian, tmp_arr_token);
+            guardian_list_destroy(guardian, tmp_num_token);
             return;
         }
-        *arr = tmp_arr;
-        *num_arr = tmp_num;
+        *arr_token = tmp_arr_token;
+        *num_arr_token = tmp_num_token;
         for (size_t d = old_dims; d < new_dims; ++d) {
-            (*arr)[d] = NULL;
-            (*num_arr)[d] = 0;
+            guardian_list_set(guardian, *arr_token, d, NULL);
+            guardian_list_set(guardian, *num_arr_token, d, 0);
         }
         *num_dims = new_dims;
     }
     // Grow array in this dimension
-    size_t idx = (*num_arr)[dim];
-    Node** tmp_dim = guardian_realloc_simple((*arr)[dim], (idx + 1) * sizeof(Node*));
-    if (!tmp_dim) return;
-    (*arr)[dim] = tmp_dim;
-    (*arr)[dim][idx] = target;
-    (*num_arr)[dim]++;
+    size_t idx;
+    guardian_list_get(guardian, *num_arr_token, dim, &idx);
+    unsigned long tmp_dim_token;
+    guardian_list_resize(guardian, *arr_token, idx + 1, &tmp_dim_token);
+    if (!tmp_dim_token) return;
+    guardian_list_set(guardian, *arr_token, dim, tmp_dim_token);
+    guardian_list_set(guardian, tmp_dim_token, idx, target);
+    guardian_list_set(guardian, *num_arr_token, dim, idx + 1);
 }
 
 // === Geneology Basic Operations ===
 
-Geneology* geneology_create(void) {
-    return guardian_calloc_simple(1, sizeof(Geneology));
+Geneology* geneology_create(TokenGuardian* guardian) {
+    if (!guardian) return NULL;
+    unsigned long geneology_token, nodes_token, dict_token;
+    Geneology* g = (Geneology*)guardian_alloc(guardian, sizeof(Geneology), &geneology_token);
+    if (!g) return NULL;
+    // Create an empty list for nodes
+    g->nodes_token = guardian_list_create(guardian, &nodes_token);
+    g->num_nodes = 0;
+    // Create an empty hash map for path hash dict
+    g->path_hash_dict_token = guardian_dict_create(guardian, &dict_token);
+    return g;
 }
 
-void geneology_destroy(Geneology* g) {
-    if (!g) return;
-    guardian_free_simple(g->nodes);
-    guardian_free_simple(g);
+void geneology_destroy(TokenGuardian* guardian, Geneology* g) {
+    if (!guardian || !g) return;
+    guardian_list_destroy(guardian, g->nodes_token);
+    guardian_dict_destroy(guardian, g->path_hash_dict_token);
+    guardian_free(guardian, g);
 }
 
-void geneology_add_node(Geneology* g, Node* node) {
-    if (!g || !node) return;
-    if (g->num_nodes == g->cap_nodes) {
-        size_t new_cap = g->cap_nodes ? g->cap_nodes * 2 : 8;
-        Node** tmp = realloc(g->nodes, new_cap * sizeof(Node*));
-        if (!tmp) return;
-        g->nodes = tmp;
-        g->cap_nodes = new_cap;
-    }
-    g->nodes[g->num_nodes++] = node;
+void geneology_add_node(TokenGuardian* guardian, Geneology* g, Node* node) {
+    if (!guardian || !g || !node) return;
+    unsigned long node_token;
+    guardian_list_append(guardian, g->nodes_token, node, &node_token);
+    g->num_nodes++;
 }
 
-void geneology_remove_node(Geneology* g, Node* node) {
-    if (!g || !node) return;
-    for (size_t i = 0; i < g->num_nodes; ++i) {
-        if (g->nodes[i] == node) {
-            memmove(&g->nodes[i], &g->nodes[i + 1], (g->num_nodes - i - 1) * sizeof(Node*));
-            g->num_nodes--;
-            break;
-        }
-    }
+void geneology_remove_node(TokenGuardian* guardian, Geneology* g, Node* node) {
+    if (!guardian || !g || !node) return;
+    guardian_list_remove(guardian, g->nodes_token, node);
+    g->num_nodes--;
 }
 
 size_t geneology_num_nodes(const Geneology* g) {
@@ -93,8 +104,10 @@ size_t geneology_num_nodes(const Geneology* g) {
 }
 
 Node* geneology_get_node(const Geneology* g, size_t idx) {
-    if (!g || idx >= g->num_nodes) return NULL;
-    return g->nodes[idx];
+    if (!g) return NULL;
+    unsigned long node_token;
+    if (!guardian_list_get(NULL, g->nodes_token, idx, &node_token)) return NULL;
+    return guardian_deref_node(NULL, node_token);
 }
 
 // === Node Data Structures ===
@@ -103,89 +116,106 @@ Node* geneology_get_node(const Geneology* g, size_t idx) {
 
 // Traversal (DFS, BFS)
 #include <stdbool.h>
-void geneology_traverse_dfs(Geneology* g, Node* root, GeneologyVisitFn visit, void* user) {
-    if (!g || !root || !visit) return;
-    bool* visited = guardian_calloc_simple(g->num_nodes, sizeof(bool));
+void geneology_traverse_dfs(TokenGuardian* guardian, Geneology* g, Node* root, GeneologyVisitFn visit, void* user) {
+    if (!guardian || !g || !root || !visit) return;
+    bool* visited = guardian_calloc(guardian, g->num_nodes, sizeof(bool));
     size_t stack_cap = 16, stack_size = 0;
-    Node** stack = guardian_malloc_simple(stack_cap * sizeof(Node*));
+    Node** stack = guardian_malloc(guardian, stack_cap * sizeof(Node*));
     stack[stack_size++] = root;
     while (stack_size) {
         Node* n = stack[--stack_size];
         size_t idx = 0;
-        for (; idx < g->num_nodes; ++idx) if (g->nodes[idx] == n) break;
+        for (; idx < g->num_nodes; ++idx) if (geneology_get_node(g, idx) == n) break;
         if (idx == g->num_nodes || visited[idx]) continue;
         visited[idx] = true;
         visit(n, user);
-        for (size_t i = 0; i < n->num_forward_links; ++i) {
+        // Use Guardian API to get number of forward links
+        size_t num_links = guardian_list_size(guardian, n->forward_links_token);
+        for (size_t i = 0; i < num_links; ++i) {
+            unsigned long link_token;
+            if (!guardian_list_get(guardian, n->forward_links_token, i, &link_token)) continue;
+            NodeLink* link = guardian_deref_link(guardian, link_token);
             if (stack_size == stack_cap) {
                 size_t new_cap = stack_cap * 2;
-                Node** tmp = guardian_realloc_simple(stack, new_cap * sizeof(Node*));
+                Node** tmp = guardian_realloc(guardian, stack, new_cap * sizeof(Node*));
                 if (!tmp) break;
                 stack = tmp;
                 stack_cap = new_cap;
             }
-            stack[stack_size++] = n->forward_links[i].node;
+            stack[stack_size++] = link->node;
         }
     }
-    guardian_free_simple(stack);
-    guardian_free_simple(visited);
+    guardian_free(guardian, stack);
+    guardian_free(guardian, visited);
 }
 
-void geneology_traverse_bfs(Geneology* g, Node* root, GeneologyVisitFn visit, void* user) {
-    if (!g || !root || !visit) return;
-    bool* visited = guardian_calloc_simple(g->num_nodes, sizeof(bool));
+void geneology_traverse_bfs(TokenGuardian* guardian, Geneology* g, Node* root, GeneologyVisitFn visit, void* user) {
+    if (!guardian || !g || !root || !visit) return;
+    bool* visited = guardian_calloc(guardian, g->num_nodes, sizeof(bool));
     size_t queue_cap = 16, queue_size = 0, queue_head = 0;
-    Node** queue = guardian_malloc_simple(queue_cap * sizeof(Node*));
+    Node** queue = guardian_malloc(guardian, queue_cap * sizeof(Node*));
     queue[queue_size++] = root;
     while (queue_head < queue_size) {
         Node* n = queue[queue_head++];
         size_t idx = 0;
-        for (; idx < g->num_nodes; ++idx) if (g->nodes[idx] == n) break;
+        for (; idx < g->num_nodes; ++idx) if (geneology_get_node(g, idx) == n) break;
         if (idx == g->num_nodes || visited[idx]) continue;
         visited[idx] = true;
         visit(n, user);
-        for (size_t i = 0; i < n->num_forward_links; ++i) {
+        size_t num_links = guardian_list_size(guardian, n->forward_links_token);
+        for (size_t i = 0; i < num_links; ++i) {
+            unsigned long link_token;
+            if (!guardian_list_get(guardian, n->forward_links_token, i, &link_token)) continue;
+            NodeLink* link = guardian_deref_link(guardian, link_token);
             if (queue_size == queue_cap) {
                 size_t new_cap = queue_cap * 2;
-                Node** tmp = guardian_realloc_simple(queue, new_cap * sizeof(Node*));
+                Node** tmp = guardian_realloc(guardian, queue, new_cap * sizeof(Node*));
                 if (!tmp) break;
                 queue = tmp;
                 queue_cap = new_cap;
             }
-            queue[queue_size++] = n->forward_links[i].node;
+            queue[queue_size++] = link->node;
         }
     }
-    guardian_free_simple(queue);
-    guardian_free_simple(visited);
+    guardian_free(guardian, queue);
+    guardian_free(guardian, visited);
 }
 
 // Stubs for search/sort
 typedef int (*GeneologyNodeCmp)(const Node*, const Node*);
-void geneology_sort(Geneology* g, GeneologyNodeCmp cmp) {
-    if (!g || !cmp || g->num_nodes < 2) return;
+void geneology_sort(TokenGuardian* guardian, Geneology* g, GeneologyNodeCmp cmp) {
+    if (!guardian || !g || !cmp || g->num_nodes < 2) return;
     for (size_t i = 0; i < g->num_nodes - 1; ++i) {
         for (size_t j = i + 1; j < g->num_nodes; ++j) {
-            if (cmp(g->nodes[i], g->nodes[j]) > 0) {
-                Node* tmp = g->nodes[i];
-                g->nodes[i] = g->nodes[j];
-                g->nodes[j] = tmp;
+            Node* node_i = geneology_get_node(g, i);
+            Node* node_j = geneology_get_node(g, j);
+            if (cmp(node_i, node_j) > 0) {
+                unsigned long token_i, token_j;
+                guardian_list_get(guardian, g->nodes_token, i, &token_i);
+                guardian_list_get(guardian, g->nodes_token, j, &token_j);
+                guardian_list_set(guardian, g->nodes_token, i, guardian_deref_node(guardian, token_j));
+                guardian_list_set(guardian, g->nodes_token, j, guardian_deref_node(guardian, token_i));
             }
         }
     }
 }
 
-Node* geneology_search(Geneology* g, int (*pred)(const Node*, void*), void* user) {
-    if (!g || !pred) return NULL;
+Node* geneology_search(TokenGuardian* guardian, Geneology* g, int (*pred)(const Node*, void*), void* user) {
+    if (!guardian || !g || !pred) return NULL;
     for (size_t i = 0; i < g->num_nodes; ++i) {
-        if (pred(g->nodes[i], user)) return g->nodes[i];
+        Node* node = geneology_get_node(g, i);
+        if (pred(node, user)) return node;
     }
     return NULL;
 }
 
 // === Node Lifecycle ===
 
-Node* node_create(void) {
-    Node* n = (Node*)guardian_calloc_simple(1, sizeof(Node));
+Node* node_create(TokenGuardian* guardian) {
+    if (!guardian) return NULL;
+    unsigned long node_token;
+    Node* n = (Node*)guardian_alloc(guardian, sizeof(Node), &node_token);
+    if (!n) return NULL;
     static uint64_t counter = 1;
     n->uid = counter++;
 #ifdef _WIN32
@@ -194,74 +224,64 @@ Node* node_create(void) {
     pthread_mutex_init(&n->mutex, NULL);
 #endif
     // Initialize multidimensional stencil arrays to NULL/0
-    n->parents = NULL;
-    n->num_parents = NULL;
+    n->parents_token = guardian_list_create(guardian, NULL);
+    n->num_parents_token = guardian_list_create(guardian, NULL);
     n->num_dims_parents = 0;
-    n->children = NULL;
-    n->num_children = NULL;
+    n->children_token = guardian_list_create(guardian, NULL);
+    n->num_children_token = guardian_list_create(guardian, NULL);
     n->num_dims_children = 0;
-    n->left_siblings = NULL;
-    n->num_left_siblings = NULL;
+    n->left_siblings_token = guardian_list_create(guardian, NULL);
+    n->num_left_siblings_token = guardian_list_create(guardian, NULL);
     n->num_dims_left_siblings = 0;
-    n->right_siblings = NULL;
-    n->num_right_siblings = NULL;
+    n->right_siblings_token = guardian_list_create(guardian, NULL);
+    n->num_right_siblings_token = guardian_list_create(guardian, NULL);
     n->num_dims_right_siblings = 0;
+    n->forward_links_token = guardian_list_create(guardian, NULL);
+    n->backward_links_token = guardian_list_create(guardian, NULL);
     return n;
 }
 
-void node_destroy(Node* node) {
-    if (!node) return;
+void node_destroy(TokenGuardian* guardian, Node* node) {
+    if (!guardian || !node) return;
 #ifdef _WIN32
     DeleteCriticalSection(&node->mutex);
 #else
     pthread_mutex_destroy(&node->mutex);
 #endif
-    guardian_free_simple(node->id);
-    guardian_free_simple(node->relations);
+    guardian_free(guardian, node->id);
+    guardian_free(guardian, node->relations);
     if (node->features) {
         for (size_t i = 0; i < node->num_features; ++i) {
-            guardian_free_simple(node->features[i]);
+            guardian_free(guardian, node->features[i]);
         }
     }
-    guardian_free_simple(node->features);
-    guardian_free_simple(node->exposures);
-    guardian_free_simple(node->forward_links);
-    guardian_free_simple(node->backward_links);
+    guardian_free(guardian, node->features);
+    guardian_free(guardian, node->exposures);
+    guardian_list_destroy(guardian, node->forward_links_token);
+    guardian_list_destroy(guardian, node->backward_links_token);
     // Free multidimensional stencil arrays
-    if (node->parents) {
-        for (size_t d = 0; d < node->num_dims_parents; ++d) guardian_free_simple(node->parents[d]);
-        guardian_free_simple(node->parents);
-        guardian_free_simple(node->num_parents);
-    }
-    if (node->children) {
-        for (size_t d = 0; d < node->num_dims_children; ++d) guardian_free_simple(node->children[d]);
-        guardian_free_simple(node->children);
-        guardian_free_simple(node->num_children);
-    }
-    if (node->left_siblings) {
-        for (size_t d = 0; d < node->num_dims_left_siblings; ++d) guardian_free_simple(node->left_siblings[d]);
-        guardian_free_simple(node->left_siblings);
-        guardian_free_simple(node->num_left_siblings);
-    }
-    if (node->right_siblings) {
-        for (size_t d = 0; d < node->num_dims_right_siblings; ++d) guardian_free_simple(node->right_siblings[d]);
-        guardian_free_simple(node->right_siblings);
-        guardian_free_simple(node->num_right_siblings);
-    }
-    guardian_free_simple(node);
+    guardian_list_destroy(guardian, node->parents_token);
+    guardian_list_destroy(guardian, node->num_parents_token);
+    guardian_list_destroy(guardian, node->children_token);
+    guardian_list_destroy(guardian, node->num_children_token);
+    guardian_list_destroy(guardian, node->left_siblings_token);
+    guardian_list_destroy(guardian, node->num_left_siblings_token);
+    guardian_list_destroy(guardian, node->right_siblings_token);
+    guardian_list_destroy(guardian, node->num_right_siblings_token);
+    guardian_free(guardian, node);
 }
 
 // === Node API ===
 
-static size_t node_add_relation_full(Node* node, int type, NodeForwardFn forward, NodeBackwardFn backward, const char* name, void* context) {
-    if (node->num_relations == node->cap_relations) {
-        void* tmp = grow_array(node->relations, sizeof(NodeRelation), &node->cap_relations);
+static size_t node_add_relation_full(TokenGuardian* guardian, Node* node, int type, NodeForwardFn forward, NodeBackwardFn backward, const char* name, void* context) {
+    if (!guardian || guardian_list_size(guardian, node->relations_token) == node->cap_relations) {
+        void* tmp = grow_array(guardian, node->relations, sizeof(NodeRelation), &node->cap_relations);
         if (!tmp) return (size_t)-1;
         node->relations = (NodeRelation*)tmp;
     }
     NodeRelation r = {type, forward, backward, strdup(name), context};
-    size_t idx = node->num_relations;
-    node->relations[idx] = r;
+    size_t idx = guardian_list_size(guardian, node->relations_token);
+    guardian_list_append(guardian, node->relations_token, &r, NULL);
     node->num_relations++;
 
     // Default to 0th dimension for now
@@ -269,27 +289,27 @@ static size_t node_add_relation_full(Node* node, int type, NodeForwardFn forward
     Node* partner = context ? (Node*)context : NULL;
     switch (type) {
         case EDGE_PARENT_CHILD_CONTIGUOUS:
-            if (partner) node_add_to_stencil(&node->children, &node->num_children, &node->num_dims_children, dim, partner);
+            if (partner) node_add_to_stencil(guardian, &node->children_token, &node->num_children_token, &node->num_dims_children, dim, partner);
             break;
         case EDGE_CHILD_PARENT_CONTIGUOUS:
-            if (partner) node_add_to_stencil(&node->parents, &node->num_parents, &node->num_dims_parents, dim, partner);
+            if (partner) node_add_to_stencil(guardian, &node->parents_token, &node->num_parents_token, &node->num_dims_parents, dim, partner);
             break;
         case EDGE_SIBLING_LEFT_TO_RIGHT_CONTIGUOUS:
-            if (partner) node_add_to_stencil(&node->right_siblings, &node->num_right_siblings, &node->num_dims_right_siblings, dim, partner);
+            if (partner) node_add_to_stencil(guardian, &node->right_siblings_token, &node->num_right_siblings_token, &node->num_dims_right_siblings, dim, partner);
             break;
         case EDGE_SIBLING_RIGHT_TO_LEFT_CONTIGUOUS:
-            if (partner) node_add_to_stencil(&node->left_siblings, &node->num_left_siblings, &node->num_dims_left_siblings, dim, partner);
+            if (partner) node_add_to_stencil(guardian, &node->left_siblings_token, &node->num_left_siblings_token, &node->num_dims_left_siblings, dim, partner);
             break;
         case EDGE_SIBLING_SIBLING_NONCONTIGUOUS:
             if (partner) {
-                node_add_to_stencil(&node->left_siblings, &node->num_left_siblings, &node->num_dims_left_siblings, dim, partner);
-                node_add_to_stencil(&node->right_siblings, &node->num_right_siblings, &node->num_dims_right_siblings, dim, partner);
+                node_add_to_stencil(guardian, &node->left_siblings_token, &node->num_left_siblings_token, &node->num_dims_left_siblings, dim, partner);
+                node_add_to_stencil(guardian, &node->right_siblings_token, &node->num_right_siblings_token, &node->num_dims_right_siblings, dim, partner);
             }
             break;
         case EDGE_LINEAGE_NONCONTIGUOUS:
             if (partner) {
-                node_add_to_stencil(&node->parents, &node->num_parents, &node->num_dims_parents, dim, partner);
-                node_add_to_stencil(&node->children, &node->num_children, &node->num_dims_children, dim, partner);
+                node_add_to_stencil(guardian, &node->parents_token, &node->num_parents_token, &node->num_dims_parents, dim, partner);
+                node_add_to_stencil(guardian, &node->children_token, &node->num_children_token, &node->num_dims_children, dim, partner);
             }
             break;
         case EDGE_ARBITRARY:
@@ -299,66 +319,66 @@ static size_t node_add_relation_full(Node* node, int type, NodeForwardFn forward
     return idx;
 }
 
-size_t node_add_relation(Node* node, int type, NodeForwardFn forward, NodeBackwardFn backward) {
-    return node_add_relation_full(node, type, forward, backward, "", NULL);
+size_t node_add_relation(TokenGuardian* guardian, Node* node, int type, NodeForwardFn forward, NodeBackwardFn backward) {
+    return node_add_relation_full(guardian, node, type, forward, backward, "", NULL);
 }
 
-size_t node_add_feature(Node* node, const char* feature) {
-    if (node->num_features == node->cap_features) {
-        void* tmp = grow_array(node->features, sizeof(char*), &node->cap_features);
+size_t node_add_feature(TokenGuardian* guardian, Node* node, const char* feature) {
+    if (!guardian || guardian_list_size(guardian, node->features_token) == node->cap_features) {
+        void* tmp = grow_array(guardian, node->features, sizeof(char*), &node->cap_features);
         if (!tmp) return (size_t)-1;
         node->features = (char**)tmp;
     }
-    node->features[node->num_features] = strdup(feature);
-    return node->num_features++;
+    guardian_list_append(guardian, node->features_token, strdup(feature), NULL);
+    return guardian_list_size(guardian, node->features_token) - 1;
 }
 
-size_t node_add_exposure(Node* node, NodeProduceFn produce, NodeReverseFn reverse) {
-    if (node->num_exposures == node->cap_exposures) {
-        void* tmp = grow_array(node->exposures, sizeof(NodeExposure), &node->cap_exposures);
+size_t node_add_exposure(TokenGuardian* guardian, Node* node, NodeProduceFn produce, NodeReverseFn reverse) {
+    if (!guardian || guardian_list_size(guardian, node->exposures_token) == node->cap_exposures) {
+        void* tmp = grow_array(guardian, node->exposures, sizeof(NodeExposure), &node->cap_exposures);
         if (!tmp) return (size_t)-1;
         node->exposures = (NodeExposure*)tmp;
     }
     NodeExposure e = {produce, reverse};
-    node->exposures[node->num_exposures] = e;
-    return node->num_exposures++;
+    guardian_list_append(guardian, node->exposures_token, &e, NULL);
+    return guardian_list_size(guardian, node->exposures_token) - 1;
 }
 
 // === DAG Linkage ===
 
-size_t node_add_forward_link(Node* node, Node* link, int relation) {
-    if (node->num_forward_links == node->cap_forward_links) {
-        void* tmp = grow_array(node->forward_links, sizeof(NodeLink), &node->cap_forward_links);
+size_t node_add_forward_link(TokenGuardian* guardian, Node* node, Node* link, int relation) {
+    if (!guardian || guardian_list_size(guardian, node->forward_links_token) == node->cap_forward_links) {
+        void* tmp = grow_array(guardian, node->forward_links, sizeof(NodeLink), &node->cap_forward_links);
         if (!tmp) return (size_t)-1;
         node->forward_links = (NodeLink*)tmp;
     }
     NodeLink l = {link, relation};
-    node->forward_links[node->num_forward_links] = l;
-    return node->num_forward_links++;
+    guardian_list_append(guardian, node->forward_links_token, &l, NULL);
+    return guardian_list_size(guardian, node->forward_links_token) - 1;
 }
 
-size_t node_add_backward_link(Node* node, Node* link, int relation) {
-    if (node->num_backward_links == node->cap_backward_links) {
-        void* tmp = grow_array(node->backward_links, sizeof(NodeLink), &node->cap_backward_links);
+size_t node_add_backward_link(TokenGuardian* guardian, Node* node, Node* link, int relation) {
+    if (!guardian || guardian_list_size(guardian, node->backward_links_token) == node->cap_backward_links) {
+        void* tmp = grow_array(guardian, node->backward_links, sizeof(NodeLink), &node->cap_backward_links);
         if (!tmp) return (size_t)-1;
         node->backward_links = (NodeLink*)tmp;
     }
     NodeLink l = {link, relation};
-    node->backward_links[node->num_backward_links] = l;
-    return node->num_backward_links++;
+    guardian_list_append(guardian, node->backward_links_token, &l, NULL);
+    return guardian_list_size(guardian, node->backward_links_token) - 1;
 }
 
-size_t node_add_bidirectional_link(Node* a, Node* b, int relation) {
-    if (!a || !b) return (size_t)-1;
+size_t node_add_bidirectional_link(TokenGuardian* guardian, Node* a, Node* b, int relation) {
+    if (!guardian || !a || !b) return (size_t)-1;
     // Add forward link for a -> b
-    size_t idx1 = node_add_forward_link(a, b, relation);
+    size_t idx1 = node_add_forward_link(guardian, a, b, relation);
     // Add to a's stencil (children, right_siblings, etc.)
     switch (relation) {
         case EDGE_PARENT_CHILD_CONTIGUOUS:
-            node_add_to_stencil(&a->children, &a->num_children, &a->num_dims_children, 0, b);
+            node_add_to_stencil(guardian, &a->children_token, &a->num_children_token, &a->num_dims_children, 0, b);
             break;
         case EDGE_SIBLING_LEFT_TO_RIGHT_CONTIGUOUS:
-            node_add_to_stencil(&a->right_siblings, &a->num_right_siblings, &a->num_dims_right_siblings, 0, b);
+            node_add_to_stencil(guardian, &a->right_siblings_token, &a->num_right_siblings_token, &a->num_dims_right_siblings, 0, b);
             break;
         default:
             break;
@@ -366,14 +386,14 @@ size_t node_add_bidirectional_link(Node* a, Node* b, int relation) {
     // Add backward link for b -> a (inverse relation)
     int inverse_relation = geneology_invert_relation(relation);
     if (inverse_relation >= (int)b->num_relations) inverse_relation = 0;
-    size_t idx2 = node_add_backward_link(b, a, inverse_relation);
+    size_t idx2 = node_add_backward_link(guardian, b, a, inverse_relation);
     // Add to b's stencil (parents, left_siblings, etc.)
     switch (inverse_relation) {
         case EDGE_CHILD_PARENT_CONTIGUOUS:
-            node_add_to_stencil(&b->parents, &b->num_parents, &b->num_dims_parents, 0, a);
+            node_add_to_stencil(guardian, &b->parents_token, &b->num_parents_token, &b->num_dims_parents, 0, a);
             break;
         case EDGE_SIBLING_RIGHT_TO_LEFT_CONTIGUOUS:
-            node_add_to_stencil(&b->left_siblings, &b->num_left_siblings, &b->num_dims_left_siblings, 0, a);
+            node_add_to_stencil(guardian, &b->left_siblings_token, &b->num_left_siblings_token, &b->num_dims_left_siblings, 0, a);
             break;
         default:
             break;
@@ -404,20 +424,38 @@ int geneology_invert_relation(int relation_type) {
 
 // --- Adaptive Node Operations ---
 
-Node* node_split(const Node* src) {
-    if (!src) return NULL;
-    Node* n = node_create();
-    for (size_t i = 0; i < src->num_features; ++i)
-        node_add_feature(n, src->features[i]);
-    for (size_t i = 0; i < src->num_exposures; ++i)
-        node_add_exposure(n, src->exposures[i].produce, src->exposures[i].reverse);
-    for (size_t i = 0; i < src->num_relations; ++i)
-        node_add_relation_full(n,
-                              src->relations[i].type,
-                              src->relations[i].forward,
-                              src->relations[i].backward,
-                              src->relations[i].name,
-                              src->relations[i].context);
+Node* node_split(TokenGuardian* guardian, const Node* src) {
+    if (!guardian || !src) return NULL;
+    Node* n = node_create(guardian);
+    size_t num_features = guardian_list_size(guardian, src->features_token);
+    for (size_t i = 0; i < num_features; ++i) {
+        unsigned long feature_token;
+        if (guardian_list_get(guardian, src->features_token, i, &feature_token)) {
+            char* feature = guardian_deref_string(guardian, feature_token);
+            node_add_feature(guardian, n, feature);
+        }
+    }
+    size_t num_exposures = guardian_list_size(guardian, src->exposures_token);
+    for (size_t i = 0; i < num_exposures; ++i) {
+        unsigned long exposure_token;
+        if (guardian_list_get(guardian, src->exposures_token, i, &exposure_token)) {
+            NodeExposure* exposure = guardian_deref_exposure(guardian, exposure_token);
+            node_add_exposure(guardian, n, exposure->produce, exposure->reverse);
+        }
+    }
+    size_t num_relations = guardian_list_size(guardian, src->relations_token);
+    for (size_t i = 0; i < num_relations; ++i) {
+        unsigned long relation_token;
+        if (guardian_list_get(guardian, src->relations_token, i, &relation_token)) {
+            NodeRelation* relation = guardian_deref_relation(guardian, relation_token);
+            node_add_relation_full(guardian, n,
+                                   relation->type,
+                                   relation->forward,
+                                   relation->backward,
+                                   relation->name,
+                                   relation->context);
+        }
+    }
     return n;
 }
 
@@ -439,38 +477,62 @@ void node_record_activation(Node* n, double act) {
 
 void node_for_each_forward(Node* node, NodeVisitFn visit, void* user) {
     if (!node || !visit) return;
-    for (size_t i = 0; i < node->num_forward_links; ++i) {
-        visit(node->forward_links[i].node, node->forward_links[i].relation, user);
+    size_t num_links = guardian_list_size(NULL, node->forward_links_token);
+    for (size_t i = 0; i < num_links; ++i) {
+        unsigned long link_token;
+        if (guardian_list_get(NULL, node->forward_links_token, i, &link_token)) {
+            NodeLink* link = guardian_deref_link(NULL, link_token);
+            visit(link->node, link->relation, user);
+        }
     }
 }
 
 void node_for_each_backward(Node* node, NodeVisitFn visit, void* user) {
     if (!node || !visit) return;
-    for (size_t i = 0; i < node->num_backward_links; ++i) {
-        visit(node->backward_links[i].node, node->backward_links[i].relation, user);
+    size_t num_links = guardian_list_size(NULL, node->backward_links_token);
+    for (size_t i = 0; i < num_links; ++i) {
+        unsigned long link_token;
+        if (guardian_list_get(NULL, node->backward_links_token, i, &link_token)) {
+            NodeLink* link = guardian_deref_link(NULL, link_token);
+            visit(link->node, link->relation, user);
+        }
     }
 }
 
 void node_scatter_to_siblings(Node* node, void* data) {
     if (!node) return;
-    for (size_t i = 0; i < node->num_forward_links; ++i) {
-        NodeLink* link = &node->forward_links[i];
-        if (link->relation >= 0 && (size_t)link->relation < node->num_relations) {
-            NodeRelation* rel = &node->relations[link->relation];
-            if (rel->forward)
-                rel->forward(link->node, data);
+    size_t num_links = guardian_list_size(NULL, node->forward_links_token);
+    for (size_t i = 0; i < num_links; ++i) {
+        unsigned long link_token;
+        if (guardian_list_get(NULL, node->forward_links_token, i, &link_token)) {
+            NodeLink* link = guardian_deref_link(NULL, link_token);
+            if (link->relation >= 0 && (size_t)link->relation < guardian_list_size(NULL, node->relations_token)) {
+                unsigned long relation_token;
+                if (guardian_list_get(NULL, node->relations_token, link->relation, &relation_token)) {
+                    NodeRelation* rel = guardian_deref_relation(NULL, relation_token);
+                    if (rel->forward)
+                        rel->forward(link->node, data);
+                }
+            }
         }
     }
 }
 
 void node_gather_from_siblings(Node* node, void* out) {
     if (!node) return;
-    for (size_t i = 0; i < node->num_backward_links; ++i) {
-        NodeLink* link = &node->backward_links[i];
-        if (link->relation >= 0 && (size_t)link->relation < node->num_relations) {
-            NodeRelation* rel = &node->relations[link->relation];
-            if (rel->backward)
-                rel->backward(link->node, out);
+    size_t num_links = guardian_list_size(NULL, node->backward_links_token);
+    for (size_t i = 0; i < num_links; ++i) {
+        unsigned long link_token;
+        if (guardian_list_get(NULL, node->backward_links_token, i, &link_token)) {
+            NodeLink* link = guardian_deref_link(NULL, link_token);
+            if (link->relation >= 0 && (size_t)link->relation < guardian_list_size(NULL, node->relations_token)) {
+                unsigned long relation_token;
+                if (guardian_list_get(NULL, node->relations_token, link->relation, &relation_token)) {
+                    NodeRelation* rel = guardian_deref_relation(NULL, relation_token);
+                    if (rel->backward)
+                        rel->backward(link->node, out);
+                }
+            }
         }
     }
 }
@@ -478,28 +540,38 @@ void node_gather_from_siblings(Node* node, void* out) {
 // === Additional Accessors ===
 
 NodeRelation* node_get_relation(const Node* node, size_t index) {
-    if (!node || index >= node->num_relations) return NULL;
-    return &node->relations[index];
+    if (!node || index >= guardian_list_size(NULL, node->relations_token)) return NULL;
+    unsigned long relation_token;
+    if (!guardian_list_get(NULL, node->relations_token, index, &relation_token)) return NULL;
+    return guardian_deref_relation(NULL, relation_token);
 }
 
 const char* node_get_feature(const Node* node, size_t index) {
-    if (!node || index >= node->num_features) return NULL;
-    return node->features[index];
+    if (!node || index >= guardian_list_size(NULL, node->features_token)) return NULL;
+    unsigned long feature_token;
+    if (!guardian_list_get(NULL, node->features_token, index, &feature_token)) return NULL;
+    return guardian_deref_string(NULL, feature_token);
 }
 
 NodeExposure* node_get_exposure(const Node* node, size_t index) {
-    if (!node || index >= node->num_exposures) return NULL;
-    return &node->exposures[index];
+    if (!node || index >= guardian_list_size(NULL, node->exposures_token)) return NULL;
+    unsigned long exposure_token;
+    if (!guardian_list_get(NULL, node->exposures_token, index, &exposure_token)) return NULL;
+    return guardian_deref_exposure(NULL, exposure_token);
 }
 
 const NodeLink* node_get_forward_link(const Node* node, size_t index) {
-    if (!node || index >= node->num_forward_links) return NULL;
-    return &node->forward_links[index];
+    if (!node || index >= guardian_list_size(NULL, node->forward_links_token)) return NULL;
+    unsigned long link_token;
+    if (!guardian_list_get(NULL, node->forward_links_token, index, &link_token)) return NULL;
+    return guardian_deref_link(NULL, link_token);
 }
 
 const NodeLink* node_get_backward_link(const Node* node, size_t index) {
-    if (!node || index >= node->num_backward_links) return NULL;
-    return &node->backward_links[index];
+    if (!node || index >= guardian_list_size(NULL, node->backward_links_token)) return NULL;
+    unsigned long link_token;
+    if (!guardian_list_get(NULL, node->backward_links_token, index, &link_token)) return NULL;
+    return guardian_deref_link(NULL, link_token);
 }
 
 // === Recursive Traversal ===
@@ -507,80 +579,92 @@ const NodeLink* node_get_backward_link(const Node* node, size_t index) {
 void node_scatter_to_descendants(Node* node, void* data) {
     if (!node) return;
     node_scatter_to_siblings(node, data);
-    for (size_t i = 0; i < node->num_forward_links; ++i) {
-        node_scatter_to_descendants(node->forward_links[i].node, data);
+    size_t num_links = guardian_list_size(NULL, node->forward_links_token);
+    for (size_t i = 0; i < num_links; ++i) {
+        unsigned long link_token;
+        if (guardian_list_get(NULL, node->forward_links_token, i, &link_token)) {
+            NodeLink* link = guardian_deref_link(NULL, link_token);
+            node_scatter_to_descendants(link->node, data);
+        }
     }
 }
 
 void node_gather_from_ancestors(Node* node, void* out) {
     if (!node) return;
     node_gather_from_siblings(node, out);
-    for (size_t i = 0; i < node->num_backward_links; ++i) {
-        node_gather_from_ancestors(node->backward_links[i].node, out);
+    size_t num_links = guardian_list_size(NULL, node->backward_links_token);
+    for (size_t i = 0; i < num_links; ++i) {
+        unsigned long link_token;
+        if (guardian_list_get(NULL, node->backward_links_token, i, &link_token)) {
+            NodeLink* link = guardian_deref_link(NULL, link_token);
+            node_gather_from_ancestors(link->node, out);
+        }
     }
 }
 
 // --- SimpleGraph implementation ---
-SimpleGraph* simplegraph_create(Geneology* g) {
-    SimpleGraph* graph = (SimpleGraph*)guardian_calloc_simple(1, sizeof(SimpleGraph));
+SimpleGraph* simplegraph_create(TokenGuardian* guardian, Geneology* g) {
+    if (!guardian) return NULL;
+    unsigned long graph_token;
+    SimpleGraph* graph = (SimpleGraph*)guardian_alloc(guardian, sizeof(SimpleGraph), &graph_token);
     graph->geneology = g;
     return graph;
 }
 
-void simplegraph_destroy(SimpleGraph* graph) {
-    if (!graph) return;
-    guardian_free_simple(graph->edges);
+void simplegraph_destroy(TokenGuardian* guardian, SimpleGraph* graph) {
+    if (!guardian || !graph) return;
+    guardian_free(guardian, graph->edges);
     if (graph->feature_block) {
         // User is responsible for freeing tensor objects
-        guardian_free_simple(graph->feature_block);
+        guardian_free(guardian, graph->feature_block);
     }
     if (graph->node_feature_maps) {
         for (size_t i = 0; i < graph->num_nodes; ++i) {
             SimpleGraphFeatureMap* fmap = &graph->node_feature_maps[i];
             for (size_t j = 0; j < fmap->cap_entries; ++j) {
-                guardian_free_simple(fmap->entries[j].key);
+                guardian_free(guardian, fmap->entries[j].key);
             }
-            guardian_free_simple(fmap->entries);
+            guardian_free(guardian, fmap->entries);
         }
-        guardian_free_simple(graph->node_feature_maps);
+        guardian_free(guardian, graph->node_feature_maps);
     }
-    guardian_free_simple(graph);
+    guardian_free(guardian, graph);
 }
 
-static void simplegraph_grow_edges(SimpleGraph* graph) {
+static void simplegraph_grow_edges(TokenGuardian* guardian, SimpleGraph* graph) {
     if (graph->num_edges == graph->cap_edges) {
         size_t new_cap = graph->cap_edges ? graph->cap_edges * 2 : 4;
-        SimpleGraphEdge* tmp = guardian_realloc_simple(graph->edges, new_cap * sizeof(SimpleGraphEdge));
+        SimpleGraphEdge* tmp = guardian_realloc(guardian, graph->edges, new_cap * sizeof(SimpleGraphEdge));
         if (!tmp) return;
         graph->edges = tmp;
         graph->cap_edges = new_cap;
     }
 }
 
-void simplegraph_add_edge(SimpleGraph* graph, Node* src, Node* dst, SimpleGraphEdgeType type, int relation) {
-    if (!graph || !src || !dst) return;
-    simplegraph_grow_edges(graph);
+void simplegraph_add_edge(TokenGuardian* guardian, SimpleGraph* graph, Node* src, Node* dst, SimpleGraphEdgeType type, int relation) {
+    if (!guardian || !graph || !src || !dst) return;
+    simplegraph_grow_edges(guardian, graph);
     SimpleGraphEdge e = {src, dst, type, relation};
     graph->edges[graph->num_edges++] = e;
     // Optionally, also add to geneology if needed
 }
 
-static void simplegraph_grow_features(SimpleGraph* graph) {
+static void simplegraph_grow_features(TokenGuardian* guardian, SimpleGraph* graph) {
     if (graph->num_features == graph->cap_features) {
         size_t new_cap = graph->cap_features ? graph->cap_features * 2 : 8;
-        void** tmp = guardian_realloc_simple(graph->feature_block, new_cap * sizeof(void*));
+        void** tmp = guardian_realloc(guardian, graph->feature_block, new_cap * sizeof(void*));
         if (!tmp) return;
         graph->feature_block = tmp;
         graph->cap_features = new_cap;
     }
 }
 
-static void simplegraph_grow_node_maps(SimpleGraph* graph) {
+static void simplegraph_grow_node_maps(TokenGuardian* guardian, SimpleGraph* graph) {
     size_t g_nodes = geneology_num_nodes(graph->geneology);
     if (g_nodes > graph->cap_nodes) {
         size_t new_cap = graph->cap_nodes ? graph->cap_nodes * 2 : 8;
         if (new_cap < g_nodes) new_cap = g_nodes;
-        SimpleGraphFeatureMap* tmp = guardian_realloc_simple(graph->node_feature_maps, new_cap * sizeof(SimpleGraphFeatureMap));
+        SimpleGraphFeatureMap* tmp = guardian_realloc(guardian, graph->node_feature_maps, new_cap * sizeof(SimpleGraphFeatureMap));
         if (!tmp) return;
         graph->node_feature_maps = tmp;
         for (size_t i = graph->cap_nodes; i < new_cap; ++i) {
@@ -598,10 +682,10 @@ static size_t simplegraph_hash(const char* s, size_t cap) {
     return h % cap;
 }
 
-void simplegraph_add_feature(SimpleGraph* graph, Node* node, const char* feature_name, void* tensor_ptr) {
-    if (!graph || !node || !feature_name) return;
-    simplegraph_grow_features(graph);
-    simplegraph_grow_node_maps(graph);
+void simplegraph_add_feature(TokenGuardian* guardian, SimpleGraph* graph, Node* node, const char* feature_name, void* tensor_ptr) {
+    if (!guardian || !graph || !node || !feature_name) return;
+    simplegraph_grow_features(guardian, graph);
+    simplegraph_grow_node_maps(guardian, graph);
     // Find node index in geneology
     size_t idx = 0;
     for (; idx < graph->num_nodes; ++idx) if (geneology_get_node(graph->geneology, idx) == node) break;
@@ -610,7 +694,7 @@ void simplegraph_add_feature(SimpleGraph* graph, Node* node, const char* feature
     // Grow feature map if needed
     if (fmap->num_entries * 2 >= fmap->cap_entries) {
         size_t new_cap = fmap->cap_entries ? fmap->cap_entries * 2 : 8;
-        SimpleGraphFeatureEntry* new_entries = guardian_calloc_simple(new_cap, sizeof(SimpleGraphFeatureEntry));
+        SimpleGraphFeatureEntry* new_entries = guardian_calloc(guardian, new_cap, sizeof(SimpleGraphFeatureEntry));
         for (size_t i = 0; i < fmap->cap_entries; ++i) {
             if (fmap->entries[i].key) {
                 size_t h = simplegraph_hash(fmap->entries[i].key, new_cap);
@@ -618,7 +702,7 @@ void simplegraph_add_feature(SimpleGraph* graph, Node* node, const char* feature
                 new_entries[h] = fmap->entries[i];
             }
         }
-        guardian_free_simple(fmap->entries);
+        guardian_free(guardian, fmap->entries);
         fmap->entries = new_entries;
         fmap->cap_entries = new_cap;
     }
@@ -633,7 +717,7 @@ void simplegraph_add_feature(SimpleGraph* graph, Node* node, const char* feature
     }
     if (!fmap->entries) {
         fmap->cap_entries = 8;
-        fmap->entries = guardian_calloc_simple(fmap->cap_entries, sizeof(SimpleGraphFeatureEntry));
+        fmap->entries = guardian_calloc(guardian, fmap->cap_entries, sizeof(SimpleGraphFeatureEntry));
     }
     fmap->entries[h].key = strdup(feature_name);
     fmap->entries[h].value = tensor_ptr;
@@ -641,9 +725,9 @@ void simplegraph_add_feature(SimpleGraph* graph, Node* node, const char* feature
     graph->feature_block[graph->num_features++] = tensor_ptr;
 }
 
-void* simplegraph_get_feature(SimpleGraph* graph, Node* node, const char* feature_name) {
-    if (!graph || !node || !feature_name) return NULL;
-    simplegraph_grow_node_maps(graph);
+void* simplegraph_get_feature(TokenGuardian* guardian, SimpleGraph* graph, Node* node, const char* feature_name) {
+    if (!guardian || !graph || !node || !feature_name) return NULL;
+    simplegraph_grow_node_maps(guardian, graph);
     size_t idx = 0;
     for (; idx < graph->num_nodes; ++idx) if (geneology_get_node(graph->geneology, idx) == node) break;
     if (idx == graph->num_nodes) return NULL;
@@ -658,28 +742,34 @@ void* simplegraph_get_feature(SimpleGraph* graph, Node* node, const char* featur
     return NULL;
 }
 
-void simplegraph_forward(SimpleGraph* graph) {
-    if (!graph) return;
+void simplegraph_forward(TokenGuardian* guardian, SimpleGraph* graph) {
+    if (!guardian || !graph) return;
     for (size_t i = 0; i < graph->num_edges; ++i) {
         Node* src = graph->edges[i].src;
         Node* dst = graph->edges[i].dst;
         int rel = graph->edges[i].relation;
-        if (src && rel >= 0 && (size_t)rel < src->num_relations) {
-            NodeRelation* r = &src->relations[rel];
-            if (r->forward) r->forward(dst, NULL); // or pass data as needed
+        if (src && rel >= 0 && (size_t)rel < guardian_list_size(NULL, src->relations_token)) {
+            unsigned long relation_token;
+            if (guardian_list_get(NULL, src->relations_token, rel, &relation_token)) {
+                NodeRelation* r = guardian_deref_relation(NULL, relation_token);
+                if (r->forward) r->forward(dst, NULL); // or pass data as needed
+            }
         }
     }
 }
 
-void simplegraph_backward(SimpleGraph* graph) {
-    if (!graph) return;
+void simplegraph_backward(TokenGuardian* guardian, SimpleGraph* graph) {
+    if (!guardian || !graph) return;
     for (size_t i = graph->num_edges; i-- > 0;) {
         Node* src = graph->edges[i].src;
         Node* dst = graph->edges[i].dst;
         int rel = graph->edges[i].relation;
-        if (src && rel >= 0 && (size_t)rel < src->num_relations) {
-            NodeRelation* r = &src->relations[rel];
-            if (r->backward) r->backward(dst, NULL); // or pass data as needed
+        if (src && rel >= 0 && (size_t)rel < guardian_list_size(NULL, src->relations_token)) {
+            unsigned long relation_token;
+            if (guardian_list_get(NULL, src->relations_token, rel, &relation_token)) {
+                NodeRelation* r = guardian_deref_relation(NULL, relation_token);
+                if (r->backward) r->backward(dst, NULL); // or pass data as needed
+            }
         }
     }
 }
@@ -688,34 +778,36 @@ void simplegraph_backward(SimpleGraph* graph) {
 #include <stdlib.h>
 #include <string.h>
 
-Dag* dag_create(void) {
-    Dag* dag = (Dag*)calloc(1, sizeof(Dag));
+Dag* dag_create(TokenGuardian* guardian) {
+    if (!guardian) return NULL;
+    unsigned long dag_token;
+    Dag* dag = (Dag*)guardian_alloc(guardian, sizeof(Dag), &dag_token);
     return dag;
 }
 
-void dag_destroy(Dag* dag) {
-    if (!dag) return;
+void dag_destroy(TokenGuardian* guardian, Dag* dag) {
+    if (!guardian || !dag) return;
     for (size_t i = 0; i < dag->num_manifests; ++i) {
         DagManifest* manifest = &dag->manifests[i];
         for (size_t l = 0; l < manifest->num_levels; ++l) {
             DagManifestLevel* level = &manifest->levels[l];
             for (size_t m = 0; m < level->num_mappings; ++m) {
                 DagManifestMapping* mapping = &level->mappings[m];
-                free(mapping->inputs);
-                free(mapping->outputs);
+                guardian_free(guardian, mapping->inputs);
+                guardian_free(guardian, mapping->outputs);
             }
-            free(level->mappings);
+            guardian_free(guardian, level->mappings);
         }
-        free(manifest->levels);
+        guardian_free(guardian, manifest->levels);
     }
-    free(dag->manifests);
-    free(dag);
+    guardian_free(guardian, dag->manifests);
+    guardian_free(guardian, dag);
 }
-void dag_add_manifest(Dag* dag, DagManifest* manifest) {
-    if (!dag || !manifest) return;
+void dag_add_manifest(TokenGuardian* guardian, Dag* dag, DagManifest* manifest) {
+    if (!guardian || !dag || !manifest) return;
     if (dag->num_manifests == dag->cap_manifests) {
         size_t new_cap = dag->cap_manifests ? dag->cap_manifests * 2 : 4;
-        DagManifest* tmp = (DagManifest*)realloc(dag->manifests, new_cap * sizeof(DagManifest));
+        DagManifest* tmp = guardian_realloc(guardian, dag->manifests, new_cap * sizeof(DagManifest));
         if (!tmp) return;
         dag->manifests = tmp;
         dag->cap_manifests = new_cap;
@@ -726,7 +818,8 @@ void dag_add_manifest(Dag* dag, DagManifest* manifest) {
 
 // --- Emergence Implementation ---
 Emergence* emergence_create(void) {
-    Emergence* e = (Emergence*)calloc(1, sizeof(Emergence));
+    unsigned long emergence_token;
+    Emergence* e = (Emergence*)guardian_alloc(NULL, sizeof(Emergence), &emergence_token);
 #ifdef _WIN32
     InitializeCriticalSection(&e->thread_lock);
 #else
@@ -742,7 +835,7 @@ void emergence_destroy(Emergence* e) {
 #else
     pthread_mutex_destroy(&e->thread_lock);
 #endif
-    free(e);
+    guardian_free(NULL, e);
 }
 
 void emergence_lock(Emergence* e) {
@@ -831,7 +924,7 @@ void dag_scatter(const DagManifestMapping* mapping, void* data) {
 #include <string.h>
 
 NeuralNetwork* neuralnetwork_create(void) {
-    NeuralNetwork* nn = (NeuralNetwork*)calloc(1, sizeof(NeuralNetwork));
+    NeuralNetwork* nn = (NeuralNetwork*)guardian_alloc(NULL, sizeof(NeuralNetwork), NULL);
     return nn;
 }
 
@@ -840,10 +933,10 @@ void neuralnetwork_destroy(NeuralNetwork* nn) {
     for (size_t d = 0; d < nn->num_dags; ++d) {
         dag_destroy(nn->dags[d]);
         for (size_t s = 0; s < nn->num_steps[d]; ++s) {
-            free(nn->steps[d][s]);
+            guardian_free(NULL, nn->steps[d][s]);
         }
     }
-    free(nn);
+    guardian_free(NULL, nn);
 }
 
 void neuralnetwork_register_function(NeuralNetwork* nn, const char* name, NNForwardFn forward, NNBackwardFn backward) {
@@ -859,7 +952,7 @@ void neuralnetwork_set_step_function(NeuralNetwork* nn, size_t dag_idx, size_t s
     if (!nn || dag_idx >= nn->num_dags || step_idx >= NN_MAX_STEPS) return;
     NeuralNetworkStep* step = nn->steps[dag_idx][step_idx];
     if (!step) {
-        step = (NeuralNetworkStep*)calloc(1, sizeof(NeuralNetworkStep));
+        step = (NeuralNetworkStep*)guardian_alloc(NULL, sizeof(NeuralNetworkStep), NULL);
         nn->steps[dag_idx][step_idx] = step;
         if (step_idx >= nn->num_steps[dag_idx]) nn->num_steps[dag_idx] = step_idx + 1;
     }
@@ -898,7 +991,7 @@ void neuralnetwork_backwardstep(NeuralNetwork* nn, size_t dag_idx, size_t step_i
 static void neighbor_map_grow(NeighborMap* map) {
     if (map->count == map->cap) {
         size_t new_cap = map->cap ? map->cap * 2 : 8;
-        NeighborEntry* tmp = guardian_realloc_simple(map->entries, new_cap * sizeof(NeighborEntry));
+        NeighborEntry* tmp = guardian_realloc(NULL, map->entries, new_cap * sizeof(NeighborEntry));
         if (!tmp) return;
         map->entries = tmp;
         map->cap = new_cap;
@@ -919,7 +1012,7 @@ int node_detach_neighbor(Node* node, size_t pole_index) {
     if (!node) return 0;
     for (size_t i = 0; i < node->neighbor_map.count; ++i) {
         if (node->neighbor_map.entries[i].label.pole_index == pole_index) {
-            free(node->neighbor_map.entries[i].label.label);
+            guardian_free(NULL, node->neighbor_map.entries[i].label.label);
             node->neighbor_map.entries[i] = node->neighbor_map.entries[node->neighbor_map.count - 1];
             node->neighbor_map.count--;
             return 1;
@@ -932,7 +1025,7 @@ int node_detach_neighbor_by_label(Node* node, const char* label) {
     if (!node || !label) return 0;
     for (size_t i = 0; i < node->neighbor_map.count; ++i) {
         if (node->neighbor_map.entries[i].label.label && strcmp(node->neighbor_map.entries[i].label.label, label) == 0) {
-            free(node->neighbor_map.entries[i].label.label);
+            guardian_free(NULL, node->neighbor_map.entries[i].label.label);
             node->neighbor_map.entries[i] = node->neighbor_map.entries[node->neighbor_map.count - 1];
             node->neighbor_map.count--;
             return 1;
@@ -997,7 +1090,7 @@ char* node_generate_stencil_relation_name(const GeneralStencil* stencil, size_t 
         }
         radius = max_offset;
     }
-    char* name = (char*)guardian_malloc_simple(128);
+    char* name = (char*)guardian_alloc(NULL, 128, NULL);
     snprintf(name, 128, "%s_%zud_r%zu_pole%zu", type_str, dims, radius, pole_index);
     return name;
 }
@@ -1005,14 +1098,14 @@ char* node_generate_stencil_relation_name(const GeneralStencil* stencil, size_t 
 // --- StencilSet helpers ---
 StencilSet* stencilset_wrap_single(GeneralStencil* stencil) {
     if (!stencil) return NULL;
-    StencilSet* set = (StencilSet*)calloc(1, sizeof(StencilSet));
-    set->stencils = (GeneralStencil**)calloc(1, sizeof(GeneralStencil*));
+    unsigned long set_token, stencils_token, relation_token;
+    StencilSet* set = (StencilSet*)guardian_alloc(NULL, sizeof(StencilSet), &set_token);
+    set->stencils = (GeneralStencil**)guardian_alloc(NULL, sizeof(GeneralStencil*), &stencils_token);
     set->stencils[0] = stencil;
     set->count = 1;
     set->cap = 1;
-    // Allocate 1x1 relation matrix
-    set->relation = (StencilRelation**)calloc(1, sizeof(StencilRelation*));
-    set->relation[0] = (StencilRelation*)calloc(1, sizeof(StencilRelation));
+    set->relation = (StencilRelation**)guardian_alloc(NULL, sizeof(StencilRelation*), &relation_token);
+    set->relation[0] = (StencilRelation*)guardian_alloc(NULL, sizeof(StencilRelation), NULL);
     set->relation[0][0].type = STENCIL_RELATION_SAME_COORDINATE_SET;
     set->relation[0][0].context = NULL;
     set->relation[0][0].similarity_fn = NULL;
@@ -1021,14 +1114,10 @@ StencilSet* stencilset_wrap_single(GeneralStencil* stencil) {
 
 void stencilset_init_fully_connected(StencilSet* set, int default_relation_type) {
     if (!set || set->count == 0) return;
-    // Free any existing relation matrix
-    if (set->relation) {
-        for (size_t i = 0; i < set->count; ++i) free(set->relation[i]);
-        free(set->relation);
-    }
-    set->relation = (StencilRelation**)calloc(set->count, sizeof(StencilRelation*));
+    unsigned long relation_token;
+    set->relation = (StencilRelation**)guardian_alloc(NULL, set->count * sizeof(StencilRelation*), &relation_token);
     for (size_t i = 0; i < set->count; ++i) {
-        set->relation[i] = (StencilRelation*)calloc(set->count, sizeof(StencilRelation));
+        set->relation[i] = (StencilRelation*)guardian_alloc(NULL, set->count * sizeof(StencilRelation), NULL);
         for (size_t j = 0; j < set->count; ++j) {
             set->relation[i][j].type = (i == j) ? STENCIL_RELATION_SAME_COORDINATE_SET : default_relation_type;
             set->relation[i][j].context = NULL;
@@ -1071,10 +1160,11 @@ int stencilset_negotiate_bond(const StencilSet* a, size_t pole_a, const StencilS
 // --- Quaternion and QuaternionHistory implementation ---
 #include <math.h>
 QuaternionHistory* quaternion_history_create(size_t window_size, QuaternionDecayFn decay_fn, void* user_data) {
-    QuaternionHistory* hist = (QuaternionHistory*)guardian_calloc_simple(1, sizeof(QuaternionHistory));
+    unsigned long hist_token, quats_token;
+    QuaternionHistory* hist = (QuaternionHistory*)guardian_alloc(NULL, sizeof(QuaternionHistory), &hist_token);
     hist->window_size = window_size;
     hist->cap = window_size ? window_size : 16;
-    hist->quats = (Quaternion*)guardian_calloc_simple(hist->cap, sizeof(Quaternion));
+    hist->quats = (Quaternion*)guardian_alloc(NULL, hist->cap * sizeof(Quaternion), &quats_token);
     hist->decay_fn = decay_fn;
     hist->decay_user_data = user_data;
     return hist;
@@ -1082,8 +1172,8 @@ QuaternionHistory* quaternion_history_create(size_t window_size, QuaternionDecay
 
 void quaternion_history_destroy(QuaternionHistory* hist) {
     if (!hist) return;
-    guardian_free_simple(hist->quats);
-    guardian_free_simple(hist);
+    guardian_free(NULL, hist->quats);
+    guardian_free(NULL, hist);
 }
 
 void quaternion_history_add(QuaternionHistory* hist, Quaternion q) {
@@ -1092,10 +1182,11 @@ void quaternion_history_add(QuaternionHistory* hist, Quaternion q) {
         // Move window left
         memmove(hist->quats, hist->quats + 1, (hist->count - 1) * sizeof(Quaternion));
         hist->quats[hist->count - 1] = q;
-    } else {
+    }
+    else {
         if (hist->count == hist->cap) {
             size_t new_cap = hist->cap * 2;
-            Quaternion* tmp = guardian_realloc_simple(hist->quats, new_cap * sizeof(Quaternion));
+            Quaternion* tmp = guardian_realloc(NULL, hist->quats, new_cap * sizeof(Quaternion));
             if (!tmp) return;
             hist->quats = tmp;
             hist->cap = new_cap;
@@ -1106,7 +1197,7 @@ void quaternion_history_add(QuaternionHistory* hist, Quaternion q) {
 
 // Simple weighted sum aggregate (normalize at end)
 Quaternion quaternion_history_aggregate(const QuaternionHistory* hist) {
-    Quaternion sum = {0, 0, 0, 0};
+    Quaternion sum = { 0, 0, 0, 0 };
     if (!hist || !hist->count) return sum;
     double total_weight = 0.0;
     for (size_t i = 0; i < hist->count; ++i) {
@@ -1125,7 +1216,7 @@ Quaternion quaternion_history_aggregate(const QuaternionHistory* hist) {
         sum.z /= total_weight;
     }
     // Normalize quaternion
-    double norm = sqrt(sum.w*sum.w + sum.x*sum.x + sum.y*sum.y + sum.z*sum.z);
+    double norm = sqrt(sum.w * sum.w + sum.x * sum.x + sum.y * sum.y + sum.z * sum.z);
     if (norm > 0) {
         sum.w /= norm;
         sum.x /= norm;
@@ -1139,40 +1230,40 @@ Quaternion quaternion_history_aggregate(const QuaternionHistory* hist) {
 #include <math.h>
 
 Quaternion quaternion_add(Quaternion a, Quaternion b) {
-    return (Quaternion){a.w + b.w, a.x + b.x, a.y + b.y, a.z + b.z};
+    return (Quaternion) { a.w + b.w, a.x + b.x, a.y + b.y, a.z + b.z };
 }
 
 Quaternion quaternion_sub(Quaternion a, Quaternion b) {
-    return (Quaternion){a.w - b.w, a.x - b.x, a.y - b.y, a.z - b.z};
+    return (Quaternion) { a.w - b.w, a.x - b.x, a.y - b.y, a.z - b.z };
 }
 
 Quaternion quaternion_scale(Quaternion q, double s) {
-    return (Quaternion){q.w * s, q.x * s, q.y * s, q.z * s};
+    return (Quaternion) { q.w* s, q.x* s, q.y* s, q.z* s };
 }
 
 Quaternion quaternion_div(Quaternion q, double s) {
-    return (Quaternion){q.w / s, q.x / s, q.y / s, q.z / s};
+    return (Quaternion) { q.w / s, q.x / s, q.y / s, q.z / s };
 }
 
 Quaternion quaternion_conjugate(Quaternion q) {
-    return (Quaternion){q.w, -q.x, -q.y, -q.z};
+    return (Quaternion) { q.w, -q.x, -q.y, -q.z };
 }
 
 Quaternion quaternion_mul(Quaternion a, Quaternion b) {
-    return (Quaternion){
-        a.w*b.w - a.x*b.x - a.y*b.y - a.z*b.z,
-        a.w*b.x + a.x*b.w + a.y*b.z - a.z*b.y,
-        a.w*b.y - a.x*b.z + a.y*b.w + a.z*b.x,
-        a.w*b.z + a.x*b.y - a.y*b.x + a.z*b.w
+    return (Quaternion) {
+        a.w* b.w - a.x * b.x - a.y * b.y - a.z * b.z,
+            a.w* b.x + a.x * b.w + a.y * b.z - a.z * b.y,
+            a.w* b.y - a.x * b.z + a.y * b.w + a.z * b.x,
+            a.w* b.z + a.x * b.y - a.y * b.x + a.z * b.w
     };
 }
 
 double quaternion_dot(Quaternion a, Quaternion b) {
-    return a.w*b.w + a.x*b.x + a.y*b.y + a.z*b.z;
+    return a.w * b.w + a.x * b.x + a.y * b.y + a.z * b.z;
 }
 
 double quaternion_norm(Quaternion q) {
-    return sqrt(q.w*q.w + q.x*q.x + q.y*q.y + q.z*q.z);
+    return sqrt(q.w * q.w + q.x * q.x + q.y * q.y + q.z * q.z);
 }
 
 Quaternion quaternion_normalize(Quaternion q) {
@@ -1195,7 +1286,7 @@ Quaternion quaternion_slerp(Quaternion a, Quaternion b, double t) {
         dot = -dot;
     }
     if (dot > 0.9995) {
-        Quaternion result = quaternion_add(quaternion_scale(a, 1-t), quaternion_scale(b, t));
+        Quaternion result = quaternion_add(quaternion_scale(a, 1 - t), quaternion_scale(b, t));
         return quaternion_normalize(result);
     }
     double theta_0 = acos(dot);
@@ -1212,10 +1303,11 @@ void quaternion_to_axis_angle(Quaternion q, double* axis_out, double* angle_out)
     if (!axis_out || !angle_out) return;
     if (q.w > 1) q = quaternion_normalize(q);
     *angle_out = 2 * acos(q.w);
-    double s = sqrt(1 - q.w*q.w);
+    double s = sqrt(1 - q.w * q.w);
     if (s < 1e-8) {
         axis_out[0] = 1; axis_out[1] = 0; axis_out[2] = 0;
-    } else {
+    }
+    else {
         axis_out[0] = q.x / s;
         axis_out[1] = q.y / s;
         axis_out[2] = q.z / s;
@@ -1223,8 +1315,8 @@ void quaternion_to_axis_angle(Quaternion q, double* axis_out, double* angle_out)
 }
 
 Quaternion quaternion_from_axis_angle(const double* axis, double angle) {
-    double s = sin(angle/2);
-    return (Quaternion){cos(angle/2), axis[0]*s, axis[1]*s, axis[2]*s};
+    double s = sin(angle / 2);
+    return (Quaternion) { cos(angle / 2), axis[0] * s, axis[1] * s, axis[2] * s };
 }
 
 // Euler conversion (ZYX order)
@@ -1286,20 +1378,23 @@ Quaternion quaternion_from_matrix(const double m[3][3]) {
         q.x = (m[2][1] - m[1][2]) * s;
         q.y = (m[0][2] - m[2][0]) * s;
         q.z = (m[1][0] - m[0][1]) * s;
-    } else {
+    }
+    else {
         if (m[0][0] > m[1][1] && m[0][0] > m[2][2]) {
             double s = 2.0 * sqrt(1.0 + m[0][0] - m[1][1] - m[2][2]);
             q.w = (m[2][1] - m[1][2]) / s;
             q.x = 0.25 * s;
             q.y = (m[0][1] + m[1][0]) / s;
             q.z = (m[0][2] + m[2][0]) / s;
-        } else if (m[1][1] > m[2][2]) {
+        }
+        else if (m[1][1] > m[2][2]) {
             double s = 2.0 * sqrt(1.0 + m[1][1] - m[0][0] - m[2][2]);
             q.w = (m[0][2] - m[2][0]) / s;
             q.x = (m[0][1] + m[1][0]) / s;
             q.y = 0.25 * s;
             q.z = (m[1][2] + m[2][1]) / s;
-        } else {
+        }
+        else {
             double s = 2.0 * sqrt(1.0 + m[2][2] - m[0][0] - m[1][1]);
             q.w = (m[1][0] - m[0][1]) / s;
             q.x = (m[0][2] + m[2][0]) / s;
@@ -1325,7 +1420,7 @@ double quaternion_angle_between(Quaternion a, Quaternion b) {
 int quaternion_is_continuous(const Quaternion* seq, size_t count, double tol) {
     if (!seq || count < 2) return 1;
     for (size_t i = 1; i < count; ++i) {
-        if (quaternion_angle_between(seq[i-1], seq[i]) > tol) return 0;
+        if (quaternion_angle_between(seq[i - 1], seq[i]) > tol) return 0;
     }
     return 1;
 }
@@ -1334,7 +1429,7 @@ int quaternion_is_gimbal_lock(Quaternion q, double tol) {
     // Gimbal lock if pitch is near +/-90 degrees
     double roll, pitch, yaw;
     quaternion_to_euler(q, &roll, &pitch, &yaw);
-    return fabs(fabs(pitch) - M_PI/2) < tol;
+    return fabs(fabs(pitch) - M_PI / 2) < tol;
 }
 
 int quaternion_history_is_smooth(const QuaternionHistory* hist, double tol) {
@@ -1345,7 +1440,7 @@ int quaternion_history_is_smooth(const QuaternionHistory* hist, double tol) {
 int quaternion_history_has_flips(const QuaternionHistory* hist, double tol) {
     if (!hist || hist->count < 2) return 0;
     for (size_t i = 1; i < hist->count; ++i) {
-        if (quaternion_angle_between(hist->quats[i-1], hist->quats[i]) > tol) return 1;
+        if (quaternion_angle_between(hist->quats[i - 1], hist->quats[i]) > tol) return 1;
     }
     return 0;
 }
@@ -1403,7 +1498,8 @@ int node_is_locked(const Node* node) {
 
 // Geneology Lock Bank
 GeneologyLockBank* geneology_lockbank_create(void) {
-    GeneologyLockBank* bank = guardian_calloc_simple(1, sizeof(GeneologyLockBank));
+    unsigned long bank_token;
+    GeneologyLockBank* bank = guardian_alloc(NULL, sizeof(GeneologyLockBank), &bank_token);
     if (!bank) return NULL;
 #ifdef _WIN32
     InitializeCriticalSection(&bank->bank_mutex);
@@ -1420,8 +1516,8 @@ void geneology_lockbank_destroy(GeneologyLockBank* bank) {
 #else
     pthread_mutex_destroy(&bank->bank_mutex);
 #endif
-    guardian_free_simple(bank->locked_nodes);
-    guardian_free_simple(bank);
+    guardian_free(NULL, bank->locked_nodes);
+    guardian_free(NULL, bank);
 }
 
 static int lockbank_has_node(GeneologyLockBank* bank, Node* node) {
@@ -1443,7 +1539,7 @@ void geneology_lockbank_request(GeneologyLockBank* bank, Node** nodes, size_t nu
         if (!lockbank_has_node(bank, n) && node_trylock(n)) {
             if (bank->num_locked == bank->cap_locked) {
                 size_t new_cap = bank->cap_locked ? bank->cap_locked * 2 : 4;
-                Node** tmp = guardian_realloc_simple(bank->locked_nodes, new_cap * sizeof(Node*));
+                Node** tmp = guardian_realloc(NULL, bank->locked_nodes, new_cap * sizeof(Node*));
                 if (!tmp) break;
                 bank->locked_nodes = tmp;
                 bank->cap_locked = new_cap;

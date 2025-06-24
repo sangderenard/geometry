@@ -1,4 +1,4 @@
-// vecdec - main header
+// geometry - main header
 #pragma once
 
 #include "mesh.hpp"
@@ -6,6 +6,6 @@
 #include "geometry.hpp"
 #include "linear_algebra.hpp"
 
-namespace vecdec {
+namespace geometry {
     void initialize(); // stub
 }

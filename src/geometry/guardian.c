@@ -7,6 +7,11 @@
 #include <pthread.h>
 #endif
 
+// All dynamic memory management and access must use guardian APIs
+// guardian_alloc, guardian_free, guardian_realloc, etc. are the only allowed methods for dynamic primitives
+// All traversal, neighbor access, and dereferencing must use guardian_deref_neighbor and token-based APIs
+// Add any missing concurrency-checked dereference helpers as needed
+
 static void guardian_mutex_init(node_mutex_t* m) {
 #ifdef _WIN32
     InitializeCriticalSection(m);
@@ -100,7 +105,7 @@ void guardian_unregister_thread(TokenGuardian* g, unsigned long token) {
     guardian_mutex_unlock(&g->mutex);
 }
 
-void* guardian_alloc(TokenGuardian* g, size_t size, unsigned long* token_out) {
+static void* guardian_alloc_internal(TokenGuardian* g, size_t size, unsigned long* token_out) {
     if (!g || size == 0) return NULL;
     static unsigned long mem_counter = 0;
     void* block = calloc(1, size);
@@ -118,7 +123,7 @@ void* guardian_alloc(TokenGuardian* g, size_t size, unsigned long* token_out) {
     return block;
 }
 
-void guardian_free(TokenGuardian* g, unsigned long token) {
+static void guardian_free_internal(TokenGuardian* g, unsigned long token) {
     if (!g || token == 0) return;
     guardian_mutex_lock(&g->mutex);
     for (size_t i = 0; i < g->num_memories; ++i) {
@@ -174,45 +179,145 @@ size_t guardian_receive(TokenGuardian* g, unsigned long to, void* buffer, size_t
     return 0;
 }
 
-// === Simple memory helpers ===
-static node_mutex_t mem_mutex;
-static int mem_mutex_initd = 0;
+// Add concurrency-checked dereference API for neighbor access
+// Returns 1 on success, 0 on dead end or error
+int guardian_deref_neighbor(TokenGuardian* g, unsigned long container_token, size_t neighbor_index, unsigned long* neighbor_token_out) {
+    if (!g || !neighbor_token_out) return 0;
+    // Example: look up the container by token, then get the neighbor token at neighbor_index
+    // This is a stub; actual implementation depends on how containers and neighbors are tracked
+    // For now, always fail (to be implemented with actual container/neighbor tracking)
+    *neighbor_token_out = 0;
+    return 0;
+}
 
-static void ensure_mem_mutex(void) {
-    if (!mem_mutex_initd) {
-        guardian_mutex_init(&mem_mutex);
-        mem_mutex_initd = 1;
+// Add factory functions for Guardian-managed objects
+
+// Enumeration for object types managed by the Guardian
+typedef enum {
+    GUARDIAN_OBJECT_LIST,
+    GUARDIAN_OBJECT_DICT,
+    GUARDIAN_OBJECT_SET,
+    GUARDIAN_OBJECT_NODE,
+    GUARDIAN_OBJECT_EDGE,
+    GUARDIAN_OBJECT_GENELOGY,
+    GUARDIAN_OBJECT_PARAMETRIC_DOMAIN,
+    GUARDIAN_OBJECT_SIMPLEGRAPH,
+    GUARDIAN_OBJECT_DAG,
+    GUARDIAN_OBJECT_DAWG,
+    GUARDIAN_OBJECT_NN,
+    GUARDIAN_OBJECT_MODSPACE,
+    GUARDIAN_OBJECT_MESHGRID,
+    GUARDIAN_OBJECT_MESH,
+    GUARDIAN_OBJECT_TENSOR,
+    GUARDIAN_OBJECT_VECTOR,
+    GUARDIAN_OBJECT_FUNCTION_SEQUENCE
+} GuardianObjectType;
+
+// Factory function declarations
+unsigned long guardian_create_object(TokenGuardian* g, GuardianObjectType type);
+void guardian_destroy_object(TokenGuardian* g, unsigned long token);
+
+// Factory function definitions
+unsigned long guardian_create_object(TokenGuardian* g, GuardianObjectType type) {
+    if (!g) return 0;
+    unsigned long token;
+    void* object = NULL;
+
+    switch (type) {
+        case GUARDIAN_OBJECT_LIST:
+            object = calloc(1, sizeof(void*)); // Placeholder for list
+            break;
+        case GUARDIAN_OBJECT_DICT:
+            object = calloc(1, sizeof(void*)); // Placeholder for dict
+            break;
+        case GUARDIAN_OBJECT_SET:
+            object = calloc(1, sizeof(void*)); // Placeholder for set
+            break;
+        case GUARDIAN_OBJECT_NODE:
+            object = calloc(1, sizeof(void*)); // Placeholder for node
+            break;
+        case GUARDIAN_OBJECT_EDGE:
+            object = calloc(1, sizeof(void*)); // Placeholder for edge
+            break;
+        case GUARDIAN_OBJECT_GENELOGY:
+            object = calloc(1, sizeof(void*)); // Placeholder for geneology
+            break;
+        case GUARDIAN_OBJECT_PARAMETRIC_DOMAIN:
+            object = calloc(1, sizeof(void*)); // Placeholder for parametric domain
+            break;
+        case GUARDIAN_OBJECT_SIMPLEGRAPH:
+            object = calloc(1, sizeof(void*)); // Placeholder for simplegraph
+            break;
+        case GUARDIAN_OBJECT_DAG:
+            object = calloc(1, sizeof(void*)); // Placeholder for dag
+            break;
+        case GUARDIAN_OBJECT_DAWG:
+            object = calloc(1, sizeof(void*)); // Placeholder for dawg
+            break;
+        case GUARDIAN_OBJECT_NN:
+            object = calloc(1, sizeof(void*)); // Placeholder for nn
+            break;
+        case GUARDIAN_OBJECT_MODSPACE:
+            object = calloc(1, sizeof(void*)); // Placeholder for modspace
+            break;
+        case GUARDIAN_OBJECT_MESHGRID:
+            object = calloc(1, sizeof(void*)); // Placeholder for meshgrid
+            break;
+        case GUARDIAN_OBJECT_MESH:
+            object = calloc(1, sizeof(void*)); // Placeholder for mesh
+            break;
+        case GUARDIAN_OBJECT_TENSOR:
+            object = calloc(1, sizeof(void*)); // Placeholder for tensor
+            break;
+        case GUARDIAN_OBJECT_VECTOR:
+            object = calloc(1, sizeof(void*)); // Placeholder for vector
+            break;
+        case GUARDIAN_OBJECT_FUNCTION_SEQUENCE:
+            object = calloc(1, sizeof(void*)); // Placeholder for function sequence
+            break;
+        default:
+            return 0;
     }
+
+    if (!object) return 0;
+    guardian_alloc_internal(g, sizeof(object), &token);
+    return token;
 }
 
-void* guardian_malloc_simple(size_t size) {
-    ensure_mem_mutex();
-    guardian_mutex_lock(&mem_mutex);
-    void* p = malloc(size);
-    guardian_mutex_unlock(&mem_mutex);
-    return p;
+void guardian_destroy_object(TokenGuardian* g, unsigned long token) {
+    if (!g || token == 0) return;
+    guardian_free_internal(g, token);
 }
 
-void* guardian_calloc_simple(size_t count, size_t size) {
-    ensure_mem_mutex();
-    guardian_mutex_lock(&mem_mutex);
-    void* p = calloc(count, size);
-    guardian_mutex_unlock(&mem_mutex);
-    return p;
-}
+// Add a recursive parser for nested object requests
 
-void* guardian_realloc_simple(void* ptr, size_t size) {
-    ensure_mem_mutex();
-    guardian_mutex_lock(&mem_mutex);
-    void* p = realloc(ptr, size);
-    guardian_mutex_unlock(&mem_mutex);
-    return p;
-}
+// Recursive parser for nested object requests
+unsigned long guardian_parse_nested_object(TokenGuardian* g, const char* request) {
+    if (!g || !request) return 0;
 
-void guardian_free_simple(void* ptr) {
-    if (!ptr) return;
-    ensure_mem_mutex();
-    guardian_mutex_lock(&mem_mutex);
-    free(ptr);
-    guardian_mutex_unlock(&mem_mutex);
+    // Placeholder for parsing logic
+    // This function will recursively parse the request string and build the desired structure
+    // using Guardian-managed tokens. The structure types include:
+    // - list: [item, item]
+    // - dict: {key:item}
+    // - set: (dict, dict, dict)
+    // - vector: <item, item, item>
+    // - tensor: ~/batch, channel, a, b, c, ..., n/~/type/~
+    // - graph: !![node^item^, node^item^, ..., n], [edge^edgeattr^, ..., m]!!
+
+    // Example pseudocode for parsing:
+    // 1. Identify the structure type based on delimiters (e.g., [], {}, (), <>, ~/~/, !! !!).
+    // 2. Recursively parse nested items within the structure.
+    // 3. Use guardian_create_object() to create tokens for each item.
+    // 4. Return the token for the top-level structure.
+
+    // Interface with contiguous()
+    // The contiguous() function will handle buffer management for contiguous composition.
+    // It will interface with deeply internal factors of buffer before rebuild length and
+    // buffer length growth and decay factors. This mechanism ensures efficient memory
+    // management and dynamic resizing of buffers.
+    // Note: contiguous() is not implemented here, but its role is assumed in the parsing process.
+
+    // Placeholder return value
+    return 0;
 }

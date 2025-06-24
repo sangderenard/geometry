@@ -1,6 +1,6 @@
 #pragma once
 
-namespace vecdec {
+namespace geometry {
     struct Mesh {
         // Vertex, edge, face data
     };

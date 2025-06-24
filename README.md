@@ -1,4 +1,4 @@
-# vecdec
+# geometry
 
 A lightweight, vectorized Discrete Exterior Calculus (DEC) toolkit in C++ using Eigen.
 
