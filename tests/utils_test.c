@@ -1,5 +1,4 @@
 #include "geometry/utils.h"
-#include "geometry/guardian.h"
 #include "geometry/stencil.h"
 #include "geometry/double_buffer.h"
 #include <assert.h>

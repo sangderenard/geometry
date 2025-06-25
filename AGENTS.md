@@ -27,5 +27,20 @@ Agents collaborating in this repository should be aware of the trajectory so far
 - **Extensibility:** Use the advanced stencil and relational APIs to express new numerical, physical, or learning operations. Document new modules with both mathematical and practical context.
 - **Agent Collaboration:** Structure code and documentation so that both human and autonomous agents can contribute, extend, and optimize the system. Design for future GPU and distributed extensions.
 
+## Memory Management Policy
+
+### Strict Prohibition
+- **Direct usage of `malloc`, `calloc`, `realloc`, or raw pointers is strictly prohibited** throughout the codebase.
+- **The creation or use of any Guardian-provided allocation or freeing functions (`guardian_alloc`, `guardian_free`, `guardian_realloc`, etc.) is strictly forbidden throughout the codebase.**
+
+### Enforcement
+Violations of this policy will result in immediate rejection of the code.
+
+### Rationale
+This policy ensures:
+- **Concurrency safety**: Prevents unsafe memory operations.
+- **Scalability**: Maintains vectorized and composable designs.
+- **Consistency**: Adheres to the project's modular and mesh-agnostic principles.
+
 ## Architectural Vision
 This project is a platform for next-generation geometry, simulation, and learning systems. The scaffolding, abstractions, and documentation are as important as the finished code. Contributors are encouraged to prototype and scale new mathematical and computational ideas, leveraging the advanced faculties of the system.
