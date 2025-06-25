@@ -28,3 +28,7 @@ enable_testing()
 add_executable(utils_test tests/utils_test.c)
 target_link_libraries(utils_test geometry)
 add_test(NAME utils_test COMMAND utils_test)
+
+add_executable(graph_ops_handler_test tests/graph_ops_handler_test.c)
+target_link_libraries(graph_ops_handler_test geometry)
+add_test(NAME graph_ops_handler_test COMMAND graph_ops_handler_test)
