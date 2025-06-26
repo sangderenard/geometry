@@ -60,6 +60,11 @@ extern "C" {
 #include "geometry/graph_ops_memory_map.h"
 #include "geometry/graph_ops_message.h"
 #include "geometry/graph_ops_custom.h"
+#include "geometry/graph_ops_bitfield.h"
+#include "geometry/graph_ops_bytefield.h"
+#include "geometry/graph_ops_radix_encoding.h"
+#include "geometry/graph_ops_pattern_palette_stream.h"
+#include "geometry/graph_ops_encoding_engine.h"
 
 /* Array of pointers to each suite; defined in graph_ops_handler.c */
 extern const OperationSuite* const OperationSuites[];

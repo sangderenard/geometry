@@ -60,6 +60,11 @@ typedef enum {
         NODE_FEATURE_TYPE_TENSOR_COMPLEX_DOUBLE = 49, // Tensor of complex numbers (double)
         NODE_FEATURE_TYPE_TENSOR_VECTOR_COMPLEX = 50, // Tensor of vectors of complex numbers (float)
         NODE_FEATURE_TYPE_TENSOR_VECTOR_COMPLEX_DOUBLE = 51, // Tensor of vectors of complex numbers (double)
+        NODE_FEATURE_TYPE_BITFIELD = 52, // Strided bitfield feature
+        NODE_FEATURE_TYPE_BYTEFIELD = 53, // Bytefield feature
+        NODE_FEATURE_TYPE_RADIX_ENCODING = 54, // Radix encoded value
+        NODE_FEATURE_TYPE_PATTERN_PALETTE_STREAM = 55, // Pattern palette stream
+        NODE_FEATURE_TYPE_ENCODING_ENGINE = 56, // Encoding engine dispatcher
         NODE_FEATURE_TYPE_COUNT
 } NodeFeatureType;
 
@@ -143,6 +148,14 @@ typedef void* (*graph_factorize_fn)(void* a, GraphOpRegion region);
 typedef void* (*graph_gcf_fn)(void* a, void* b, GraphOpRegion region);
 typedef void* (*graph_lcm_fn)(void* a, void* b, GraphOpRegion region);
 
+/* --- Bitwise Operations --- */
+typedef void* (*graph_bit_and_fn)(void* a, void* b, GraphOpRegion region);
+typedef void* (*graph_bit_or_fn)(void* a, void* b, GraphOpRegion region);
+typedef void* (*graph_bit_xor_fn)(void* a, void* b, GraphOpRegion region);
+typedef void* (*graph_bit_not_fn)(void* a, GraphOpRegion region);
+typedef void* (*graph_bit_shift_left_fn)(void* a, int shift, GraphOpRegion region);
+typedef void* (*graph_bit_shift_right_fn)(void* a, int shift, GraphOpRegion region);
+
 typedef enum {
     DIFFUSION_MODEL_AUXIN = 0,
     DIFFUSION_MODEL_SLIME_MOLD,
@@ -200,6 +213,15 @@ typedef struct {
     graph_diffuse_fn     diffuse;
 } GraphMathOps;
 
+typedef struct {
+    graph_bit_and_fn        bit_and;
+    graph_bit_or_fn         bit_or;
+    graph_bit_xor_fn        bit_xor;
+    graph_bit_not_fn        bit_not;
+    graph_bit_shift_left_fn shift_left;
+    graph_bit_shift_right_fn shift_right;
+} GraphBitOps;
+
 /* Suite of operations for a specific data-type container */
 typedef struct {
     OpTranslatePtrFn translate_ptr;
@@ -247,8 +269,9 @@ typedef struct {
     OpQuantileHistogramFn   quantile_histogram;
     OpRankOrderNormalizeFn  rank_order_normalize;
 
-    /* Extended mathematical operations */
+    /* Extended mathematical and bitwise operations */
     GraphMathOps math_ops;
+    GraphBitOps  bit_ops;
 } OperationSuite;
 
 
