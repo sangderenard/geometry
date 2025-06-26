@@ -16,30 +16,8 @@ extern "C" {
 #include "geometry/graph_ops_pointer.h"
 #include "geometry/graph_ops_complex.h"
 #include "geometry/graph_ops_complex_double.h"
-#include "geometry/graph_ops_vector_int.h"
-#include "geometry/graph_ops_vector_complex.h"
-#include "geometry/graph_ops_vector_complex_double.h"
-#include "geometry/graph_ops_vector_float.h"
-#include "geometry/graph_ops_vector_double.h"
-#include "geometry/graph_ops_vector_string.h"
-#include "geometry/graph_ops_vector_boolean.h"
-#include "geometry/graph_ops_vector_pointer.h"
-#include "geometry/graph_ops_tensor_complex.h"
-#include "geometry/graph_ops_tensor_complex_double.h"
-#include "geometry/graph_ops_tensor_int.h"
-#include "geometry/graph_ops_tensor_vector_complex.h"
-#include "geometry/graph_ops_tensor_vector_complex_double.h"
-#include "geometry/graph_ops_tensor_float.h"
-#include "geometry/graph_ops_tensor_double.h"
-#include "geometry/graph_ops_tensor_string.h"
-#include "geometry/graph_ops_tensor_boolean.h"
-#include "geometry/graph_ops_tensor_pointer.h"
-#include "geometry/graph_ops_tensor_vector_int.h"
-#include "geometry/graph_ops_tensor_vector_float.h"
-#include "geometry/graph_ops_tensor_vector_double.h"
-#include "geometry/graph_ops_tensor_vector_string.h"
-#include "geometry/graph_ops_tensor_vector_boolean.h"
-#include "geometry/graph_ops_tensor_vector_pointer.h"
+#include "geometry/graph_ops_vector.h"
+#include "geometry/graph_ops_tensor.h"
 #include "geometry/graph_ops_node.h"
 #include "geometry/graph_ops_edge.h"
 #include "geometry/graph_ops_stencil.h"
@@ -67,7 +45,7 @@ extern "C" {
 #include "geometry/graph_ops_encoding_engine.h"
 
 /* Array of pointers to each suite; defined in graph_ops_handler.c */
-extern const OperationSuite* const OperationSuites[];
+extern const OperationSuite* const OperationSuites[NODE_FEATURE_IDX_COUNT];
 
 /**
  * Retrieve the OperationSuite for the given type.
