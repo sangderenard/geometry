@@ -66,14 +66,17 @@ The library is structured in layers, from low-level backend execution to a high-
 │  • utils.h/c           (Dynamic Primitives)│
 │  • parametric_domain.h/c (Lossless Domains)│
 |  * parametric_transform.h/c (Continuous Geometry)
+|  * dec.h/c     (Differential Edge Calculus)|
 |  * dag.h/c (Wrap Counting Directional Graphs)
 │  • graph_ops.h/c                (graph API)│
+|  * stencil.h/.c (complex, multi-domain, n-d connectivity map)
+|  * geneology.h/c (Advanced relationship tracking)
 |  * metric_tensor.h/c       (N-D Capability)│
 │  • laplace_beltrami.h/c      (Core Physics)│
 |  * eigensolver.h/c (Eigenmode Decomposition)
 │  • kernels.h/c              (Graph Kernels)│
 │  • interpolator.h/c  (Reticulating Splines)│
-│  • differentiator.h/c          (DEC+engine)│
+│  • differentiator.h/c (difference/integration engine)
 |  * double_buffer.h/c (generic db byte arrays)
 |  * diff_print.h/c (differential buffer updating)
 └────────────────  ──────────────────────────┘
