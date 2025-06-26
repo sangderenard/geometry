@@ -5,20 +5,13 @@ set(CMAKE_CXX_STANDARD 17)
 
 include_directories(include third_party/eigen)
 
-file(GLOB_RECURSE CPP_SOURCES "src/*.cpp")
-list(FILTER CPP_SOURCES EXCLUDE REGEX "dec_toolkit_header.cpp$")
-file(GLOB_RECURSE C_SOURCES "src/*.c")
-add_library(geometry ${CPP_SOURCES} ${C_SOURCES})
-
-add_library(geometry_stencil
-    src/geometry/stencil.c
+set(GEOMETRY_SOURCES
+    src/geometry/utils.c
+    src/geometry/guardian_platform.c
 )
-target_include_directories(geometry_stencil PUBLIC include)
+set_source_files_properties(${GEOMETRY_SOURCES} PROPERTIES LANGUAGE CXX)
+add_library(geometry ${GEOMETRY_SOURCES})
 
-add_library(geometry_relational_vector
-    src/geometry/relational_vector.c
-)
-target_include_directories(geometry_relational_vector PUBLIC include)
 
 # Examples are optional; disable by default to avoid external deps
 # add_executable(example examples/minimal.cpp)
