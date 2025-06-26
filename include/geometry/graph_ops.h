@@ -6,280 +6,148 @@ extern "C" {
 #endif
 
 #include <stddef.h>
-#include "geometry/utils.h"
 
-struct Node;
+typedef enum {
+	NODE_FEATURE_TYPE_INT = 0, // Integer feature
+	NODE_FEATURE_TYPE_FLOAT = 1, // Float feature
+	NODE_FEATURE_TYPE_DOUBLE = 2, // Double feature
+	NODE_FEATURE_TYPE_STRING = 3, // String feature
+	NODE_FEATURE_TYPE_BOOLEAN = 4, // Boolean feature
+	NODE_FEATURE_TYPE_POINTER = 5, // Pointer feature
+	NODE_FEATURE_TYPE_VECTOR_INT = 6, // Vector feature
+	NODE_FEATURE_TYPE_VECTOR_FLOAT = 7, // Vector feature
+	NODE_FEATURE_TYPE_VECTOR_DOUBLE = 8, // Vector feature
+	NODE_FEATURE_TYPE_VECTOR_STRING = 9, // Vector feature
+	NODE_FEATURE_TYPE_VECTOR_BOOLEAN = 10, // Vector feature
+	NODE_FEATURE_TYPE_VECTOR_POINTER = 11, // Vector feature
+	NODE_FEATURE_TYPE_TENSOR_INT = 12, // Tensor feature
+	NODE_FEATURE_TYPE_TENSOR_FLOAT = 13, // Tensor feature
+	NODE_FEATURE_TYPE_TENSOR_DOUBLE = 14, // Tensor feature
+	NODE_FEATURE_TYPE_TENSOR_STRING = 15, // Tensor feature
+	NODE_FEATURE_TYPE_TENSOR_BOOLEAN = 16, // Tensor feature
+	NODE_FEATURE_TYPE_TENSOR_POINTER = 17, // Tensor feature
+	NODE_FEATURE_TYPE_TENSOR_VECTOR_INT = 18, // Tensor of vectors of integers
+	NODE_FEATURE_TYPE_TENSOR_VECTOR_FLOAT = 19, // Tensor of vectors of floats
+	NODE_FEATURE_TYPE_TENSOR_VECTOR_DOUBLE = 20, // Tensor of vectors of doubles
+	NODE_FEATURE_TYPE_TENSOR_VECTOR_STRING = 21, // Tensor of vectors of strings
+	NODE_FEATURE_TYPE_TENSOR_VECTOR_BOOLEAN = 22, // Tensor of vectors of booleans
+	NODE_FEATURE_TYPE_TENSOR_VECTOR_POINTER = 23, // Tensor of vectors of pointers
+	NODE_FEATURE_TYPE_NODE = 24, // Node feature type
+	NODE_FEATURE_TYPE_EDGE = 25, // Edge feature type
+	NODE_FEATURE_TYPE_STENCIL = 26, // Stencil feature type
+	NODE_FEATURE_TYPE_GENEALOGY = 27, // Genealogy feature type
+	NODE_FEATURE_TYPE_EMERGENCE = 28, // Emergence feature type
+	NODE_FEATURE_TYPE_LINKED_LIST = 29, // Linked list feature type
+	NODE_FEATURE_TYPE_DICTIONARY = 30, // Dictionary feature type
+	NODE_FEATURE_TYPE_SET = 31, // Set feature type
+	NODE_FEATURE_TYPE_MAP = 32, // Map feature type
+	NODE_FEATURE_TYPE_PARALLEL_LIST = 33, // Parallel list feature type
+	NODE_FEATURE_TYPE_LIST = 34, // List feature type
+	NODE_FEATURE_TYPE_POINTER_TOKEN = 35, // Pointer token feature type
+	NODE_FEATURE_TYPE_GUARDIAN = 36, // Guardian feature type
+	NODE_FEATURE_TYPE_TOKEN = 37, // Guardian token feature type
+	NODE_FEATURE_TYPE_OBJECT_SET = 38, // Guardian object set feature type
+	NODE_FEATURE_TYPE_MEMORY_TOKEN = 39, // Memory token feature type
+	NODE_FEATURE_TYPE_TOKEN_LOCK = 40, // Token lock feature type
+	NODE_FEATURE_TYPE_MEMORY_MAP = 41, // Memory map feature type
+	NODE_FEATURE_TYPE_MESSAGE = 42, // Guardian message feature type
+	NODE_FEATURE_TYPE_CUSTOM = 43, // Custom feature type for user-defined features
 
-/* Callback signatures used by the operations table */
-typedef struct Node* (*NeighborFn)(struct Node* node);
-typedef void (*NodeVoidFn)(struct Node* node);
-typedef void (*NodeNodeFn)(struct Node* node, struct Node* other);
-typedef struct Node* (*NodeReturnNodeFn)(struct Node* node);
-typedef struct Node* (*NodeIndexFn)(struct Node* node, size_t index);
-typedef size_t (*NodeSizeFn)(struct Node* node);
+} NodeFeatureType;
 
-typedef void (*NodeSortFn)(struct Node* node,
-                           int (*cmp)(const struct Node*, const struct Node*));
-typedef struct Node* (*NodeSearchFn)(struct Node* node,
-                                     int (*pred)(const struct Node*, void*),
-                                     void* user);
 
-typedef void (*NodeSliceFn)(struct Node* node, size_t start, size_t end,
-                            struct Node** out);
-typedef void (*NodeStencilFn)(struct Node* node, const size_t* indices,
-                              size_t count, struct Node** out);
+/* Generic function-pointer typedefs for container operations */
+typedef void*   (*OpCreateFn)(void);
+typedef void    (*OpDestroyFn)(void* container);
+typedef void    (*OpClearFn)(void* container);
+typedef void    (*OpPushFn)(void* container, void* element);
+typedef void*   (*OpPopFn)(void* container);
+typedef void*   (*OpShiftFn)(void* container);
+typedef void    (*OpUnshiftFn)(void* container, void* element);
+typedef void    (*OpInsertFn)(void* container, size_t index, void* element);
+typedef void*   (*OpRemoveFn)(void* container, size_t index);
+typedef void*   (*OpGetFn)(void* container, size_t index);
+typedef void    (*OpSetFn)(void* container, size_t index, void* element);
+typedef size_t  (*OpSizeFn)(const void* container);
+typedef void    (*OpSortFn)(void* container, int (*cmp)(const void*, const void*));
+typedef void*   (*OpSearchFn)(void* container, int (*pred)(const void*, void*), void* user_data);
+typedef void    (*OpSliceFn)(void* container, size_t start, size_t end, void** out_array);
+typedef void    (*OpStencilFn)(void* container, const size_t* indices, size_t count, void** out_array);
+typedef void    (*OpForEachFn)(void* container, void (*fn)(void* element, void* user_data), void* user_data);
+typedef void*   (*OpMapFn)(void* container, void* (*map_fn)(void* element, void* user_data), void* user_data);
+typedef void*   (*OpFilterFn)(void* container, int (*pred)(void* element, void* user_data), void* user_data);
+typedef void*   (*OpReduceFn)(void* container, void* (*reduce_fn)(void* acc, void* element, void* user_data), void* user_data, void* initial);
+typedef void*   (*OpCloneFn)(const void* container);
+typedef void    (*OpMergeFn)(void* dest, const void* src);
+typedef int     (*OpSerializeFn)(const void* container, void* out_buffer, size_t buffer_size);
+typedef void*   (*OpDeserializeFn)(const void* in_buffer, size_t buffer_size);
+typedef void    (*OpLockFn)(void* container);
+typedef void    (*OpUnlockFn)(void* container);
+typedef int     (*OpGetRelationshipFn)(void* container, void* a, void* b);
+typedef void*   (*OpDiffFn)(void* container);
+typedef void*   (*OpIntegrateFn)(void* container);
+typedef void*   (*OpInterpolateFn)(void* container, double t);
+typedef void*   (*OpProbabilisticSelectFn)(void* container, void* histogram);
+typedef void*   (*OpDiscretizeFn)(void* container, double resolution);
+typedef void*   (*OpLaplaceFn)(void* container);
+typedef void*   (*OpStepFn)(void* container, double t);
+typedef void*   (*OpQuantizeFn)(void* container);
+typedef void*   (*OpNormalizeFn)(void* container);
+typedef void*   (*OpHistogramFn)(void* container, size_t bins);
+typedef void*   (*OpQuantileHistogramFn)(void* container, size_t quantiles);
+typedef void*   (*OpRankOrderNormalizeFn)(void* container);
 
-/* Generic set of operations that any container like Node, Geneology or
-   SimpleGraph can provide.  The intent is that a single node can expose the
-   entire structure through these functions. */
+/* Suite of operations for a specific data-type container */
 typedef struct {
-    NodeNodeFn     push;      /* append child */
-    NodeReturnNodeFn pop;     /* remove last child and return it */
-    NodeReturnNodeFn shift;   /* remove first child and return it */
-    NodeNodeFn     unshift;   /* prepend child */
+    OpTranslatePtrFn translate_ptr;
 
-    NodeIndexFn    get;       /* access by index */
-    NodeSizeFn     size;      /* number of children */
+    OpCreateFn     create;
+    OpDestroyFn    destroy;
+    OpClearFn      clear;
 
-    NodeSortFn     sort;      /* sort children using comparator */
-    NodeSearchFn   search;    /* search using predicate */
+    OpPushFn       push;
+    OpPopFn        pop;
+    OpShiftFn      shift;
+    OpUnshiftFn    unshift;
+    OpInsertFn     insert;
+    OpRemoveFn     remove;
 
-    NeighborFn     left;      /* previous sibling */
-    NeighborFn     right;     /* next sibling */
-    NeighborFn     up;        /* parent */
-    NeighborFn     down;      /* first child */
+    OpGetFn        get;
+    OpSetFn        set;
+    OpSizeFn       size;
 
-    NodeSliceFn    slice;     /* copy range of children */
-    NodeStencilFn  stencil;   /* copy arbitrary subset */
-} GraphOps;
+    OpSortFn       sort;
+    OpSearchFn     search;
+    OpSliceFn      slice;
+    OpStencilFn    stencil;
+    OpForEachFn    for_each;
+    OpMapFn        map;
+    OpFilterFn     filter;
+    OpReduceFn     reduce;
+    OpCloneFn      clone;
+    OpMergeFn      merge;
+    OpSerializeFn  serialize;
+    OpDeserializeFn deserialize;
+    OpLockFn       lock;
+    OpUnlockFn     unlock;
+    OpGetRelationshipFn      get_relationship;
+    OpDiffFn                diff;
+    OpIntegrateFn           integrate;
+    OpInterpolateFn         interpolate;
+    OpProbabilisticSelectFn probabilistic_select;
+    OpDiscretizeFn          discretize;
+    OpLaplaceFn             laplace;
+    OpStepFn                step;
+    OpQuantizeFn            quantize;
+    OpNormalizeFn           normalize;
+    OpHistogramFn           histogram;
+    OpQuantileHistogramFn   quantile_histogram;
+    OpRankOrderNormalizeFn  rank_order_normalize;
+} OperationSuite;
 
-// =====================
-// Node Operator Overrides (Declarations Only)
-// =====================
-Node* node_add(const Node* a, const Node* b);
-Node* node_sub(const Node* a, const Node* b);
-Node* node_mul(const Node* a, const Node* b);
-Node* node_div(const Node* a, const Node* b);
-Node* node_add_scalar(const Node* a, double s);
-Node* node_mul_scalar(const Node* a, double s);
 
-// =====================
-// Geneology Operator Overrides (Declarations Only)
-// =====================
-Geneology* geneology_union(const Geneology* a, const Geneology* b);
-Geneology* geneology_intersection(const Geneology* a, const Geneology* b);
-Geneology* geneology_difference(const Geneology* a, const Geneology* b);
-Geneology* geneology_symmetric_difference(const Geneology* a, const Geneology* b);
-Geneology* geneology_complement(const Geneology* a, const Geneology* universe);
-
-// =====================
-// Special Set-Level Operations Placeholder
-// =====================
-// Add declarations for any special set-level abstractions here.
-
-// =====================
-// Node Graph Operations
-// =====================
-
-/**
- * @brief Add a directed edge from src to dst with a given relation.
- */
-void node_add_edge(Node* src, Node* dst, int relation);
-
-/**
- * @brief Remove a directed edge from src to dst with a given relation.
- */
-void node_remove_edge(Node* src, Node* dst, int relation);
-
-/**
- * @brief Check if src is connected to dst by a given relation.
- * @return 1 if connected, 0 otherwise.
- */
-int node_are_connected(const Node* src, const Node* dst, int relation);
-
-/**
- * @brief Get the number of children of a node.
- */
-size_t node_num_children(const Node* node);
-
-/**
- * @brief Get the i-th child of a node.
- */
-Node* node_get_child(const Node* node, size_t idx);
-
-/**
- * @brief Get the parent of a node (if any, else NULL).
- */
-Node* node_get_parent(const Node* node);
-
-/**
- * @brief Get the number of siblings of a node (including itself).
- */
-size_t node_num_siblings(const Node* node);
-
-/**
- * @brief Get the i-th sibling of a node.
- */
-Node* node_get_sibling(const Node* node, size_t idx);
-
-// =====================
-// Runtime Relationship Query
-// =====================
-
-/**
- * @brief Compute the relationship type between two nodes at runtime.
- *        This function traverses the graph and determines the relationship
- *        (e.g., parent, child, sibling, cousin, arbitrary, etc.)
- *        according to the current graph structure and relation types.
- *        Returns an enum or code representing the relationship, or -1 if unrelated.
- *        Extend this as needed for your taxonomy.
- */
-int node_query_relationship(const Node* a, const Node* b);
-
-// ========================
-// Geneology Graph Operations
-// ========================
-
-/**
- * @brief Merge all nodes and edges from src into dest.
- */
-void geneology_merge(Geneology* dest, const Geneology* src);
-
-/**
- * @brief Find all ancestors of a node in a geneology.
- * @param out Array to fill with ancestor nodes (user allocates).
- * @param out_count Pointer to number of ancestors found.
- */
-void geneology_find_ancestors(const Geneology* g, const Node* node, Node** out, size_t* out_count);
-
-/**
- * @brief Find all descendants of a node in a geneology.
- * @param out Array to fill with descendant nodes (user allocates).
- * @param out_count Pointer to number of descendants found.
- */
-void geneology_find_descendants(const Geneology* g, const Node* node, Node** out, size_t* out_count);
-
-/**
- * @brief Extract a lineage (ancestral path) from a node up to the root.
- * @param out Array to fill with lineage nodes (user allocates, root last).
- * @param out_count Pointer to number of nodes in lineage.
- */
-void geneology_extract_lineage(const Geneology* g, const Node* node, Node** out, size_t* out_count);
-
-/**
- * @brief Extract a 2D slice: generations [gen_start,gen_end), siblings [sib_start,sib_end) at each generation.
- *        Fills out as a flat array, row-major (generation major, then sibling).
- *        Returns number of nodes found in out_count.
- */
-void geneology_extract_slice_2d(const Geneology* g, const Node* root, size_t gen_start, size_t gen_end, size_t sib_start, size_t sib_end, Node** out, size_t* out_count);
-
-/**
- * @brief Clone a subtree rooted at node (deep copy, new nodes, same structure).
- *        Returns pointer to new root node.
- */
-Node* geneology_clone_subtree(const Geneology* g, const Node* node);
-
-// =========================
-// SimpleGraph Graph Operations
-// =========================
-
-/**
- * @brief Add a node and its features to the SimpleGraph.
- */
-void simplegraph_add_node(SimpleGraph* graph, Node* node);
-
-/**
- * @brief Remove a node and its features from the SimpleGraph.
- */
-void simplegraph_remove_node(SimpleGraph* graph, Node* node);
-
-/**
- * @brief Find all nodes connected by a specific edge type.
- * @param out Array to fill with nodes (user allocates).
- * @param out_count Pointer to number of nodes found.
- */
-void simplegraph_find_by_edge_type(const SimpleGraph* graph, SimpleGraphEdgeType type, Node** out, size_t* out_count);
-
-/**
- * @brief Extract a 2D slice from the SimpleGraph (see geneology_extract_slice_2d for semantics).
- */
-void simplegraph_extract_slice_2d(const SimpleGraph* graph, const Node* root, size_t gen_start, size_t gen_end, size_t sib_start, size_t sib_end, Node** out, size_t* out_count);
-
-// =====================
-// DAG Graph Operations
-// =====================
-
-/**
- * @brief Create a new DAG container.
- */
-Dag* dag_create(void);
-
-/**
- * @brief Destroy a DAG container.
- */
-void dag_destroy(Dag* dag);
-
-/**
- * @brief Add a manifest to the DAG.
- */
-void dag_add_manifest(Dag* dag, DagManifest* manifest);
-
-/**
- * @brief Get the number of manifests in the DAG.
- */
-size_t dag_num_manifests(const Dag* dag);
-
-/**
- * @brief Get a manifest by index.
- */
-DagManifest* dag_get_manifest(const Dag* dag, size_t idx);
-
-/**
- * @brief Get the number of levels in a manifest.
- */
-size_t dag_manifest_num_levels(const DagManifest* manifest);
-
-/**
- * @brief Get a level by index from a manifest.
- */
-DagManifestLevel* dag_manifest_get_level(const DagManifest* manifest, size_t level_idx);
-
-// DAG GraphOps (by manifest index, depth, and node index)
-void dag_push(Dag* dag, size_t manifest_idx, size_t depth, Node* node);
-Node* dag_pop(Dag* dag, size_t manifest_idx, size_t depth);
-Node* dag_shift(Dag* dag, size_t manifest_idx, size_t depth);
-void dag_unshift(Dag* dag, size_t manifest_idx, size_t depth, Node* node);
-Node* dag_get(Dag* dag, size_t manifest_idx, size_t depth, size_t idx);
-size_t dag_size(Dag* dag, size_t manifest_idx, size_t depth);
-void dag_sort(Dag* dag, size_t manifest_idx, size_t depth, int (*cmp)(const Node*, const Node*));
-Node* dag_search(Dag* dag, size_t manifest_idx, size_t depth, int (*pred)(const Node*, void*), void* user);
-Node* dag_left(Dag* dag, size_t manifest_idx, size_t depth, size_t idx);
-Node* dag_right(Dag* dag, size_t manifest_idx, size_t depth, size_t idx);
-Node* dag_up(Dag* dag, size_t manifest_idx, size_t depth, size_t idx);
-Node* dag_down(Dag* dag, size_t manifest_idx, size_t depth, size_t idx);
-void dag_slice(Dag* dag, size_t manifest_idx, size_t depth, size_t start, size_t end, Node** out);
-void dag_stencil(Dag* dag, size_t manifest_idx, size_t depth, const size_t* indices, size_t count, Node** out);
-void dag_contiguous(Dag* dag, size_t manifest_idx, size_t depth);
-
-// =====================
-// NeuralNetwork Graph Operations
-// =====================
-
-void neuralnetwork_add_dag(NeuralNetwork* nn, Dag* dag);
-void neuralnetwork_remove_dag(NeuralNetwork* nn, Dag* dag);
-Dag* neuralnetwork_get_dag(const NeuralNetwork* nn, size_t idx);
-size_t neuralnetwork_num_dags(const NeuralNetwork* nn);
-
-size_t dag_level_num_mappings(const DagManifestLevel* level);
-DagManifestMapping* dag_level_get_mapping(const DagManifestLevel* level);
-void dag_gather(const DagManifestMapping* mapping, void* out);
-void dag_scatter(const DagManifestMapping* mapping, void* data);
-
-extern const GraphOps NodeGraphOps;
-extern const GraphOps GeneologyGraphOps;
-extern const GraphOps SimpleGraphGraphOps;
-extern const GraphOps DagGraphOps;
-extern const GraphOps NeuralNetworkGraphOps;
+/* Array of pointers to implementations for each suite type */
+extern const OperationSuite* const OperationSuites[];
 
 #ifdef __cplusplus
 }

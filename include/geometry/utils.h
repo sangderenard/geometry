@@ -41,6 +41,8 @@ typedef unsigned char boolean;
 #include "geometry/graph_ops.h"
 #include "geometry/stencil.h"
 #include "geometry/parametric_domain.h"
+#include "geometry/graph_ops.h"
+#include "geometry/graph_ops_handler.h"
 
 /* Forward declarations for types used before definition */
 typedef struct GuardianLinkedList GuardianLinkedList;
@@ -135,53 +137,7 @@ typedef struct GuardianStack {
 	double priority; // Priority for scheduling or processing
 } GuardianStack;
 
-typedef enum {
-	NODE_FEATURE_TYPE_INT = 0, // Integer feature
-	NODE_FEATURE_TYPE_FLOAT = 1, // Float feature
-	NODE_FEATURE_TYPE_DOUBLE = 2, // Double feature
-	NODE_FEATURE_TYPE_STRING = 3, // String feature
-	NODE_FEATURE_TYPE_BOOLEAN = 4, // Boolean feature
-	NODE_FEATURE_TYPE_POINTER = 5, // Pointer feature
-	NODE_FEATURE_TYPE_VECTOR_INT = 6, // Vector feature
-	NODE_FEATURE_TYPE_VECTOR_FLOAT = 7, // Vector feature
-	NODE_FEATURE_TYPE_VECTOR_DOUBLE = 8, // Vector feature
-	NODE_FEATURE_TYPE_VECTOR_STRING = 9, // Vector feature
-	NODE_FEATURE_TYPE_VECTOR_BOOLEAN = 10, // Vector feature
-	NODE_FEATURE_TYPE_VECTOR_POINTER = 11, // Vector feature
-	NODE_FEATURE_TYPE_TENSOR_INT = 12, // Tensor feature
-	NODE_FEATURE_TYPE_TENSOR_FLOAT = 13, // Tensor feature
-	NODE_FEATURE_TYPE_TENSOR_DOUBLE = 14, // Tensor feature
-	NODE_FEATURE_TYPE_TENSOR_STRING = 15, // Tensor feature
-	NODE_FEATURE_TYPE_TENSOR_BOOLEAN = 16, // Tensor feature
-	NODE_FEATURE_TYPE_TENSOR_POINTER = 17, // Tensor feature
-	NODE_FEATURE_TYPE_TENSOR_VECTOR_INT = 18, // Tensor of vectors of integers
-	NODE_FEATURE_TYPE_TENSOR_VECTOR_FLOAT = 19, // Tensor of vectors of floats
-	NODE_FEATURE_TYPE_TENSOR_VECTOR_DOUBLE = 20, // Tensor of vectors of doubles
-	NODE_FEATURE_TYPE_TENSOR_VECTOR_STRING = 21, // Tensor of vectors of strings
-	NODE_FEATURE_TYPE_TENSOR_VECTOR_BOOLEAN = 22, // Tensor of vectors of booleans
-	NODE_FEATURE_TYPE_TENSOR_VECTOR_POINTER = 23, // Tensor of vectors of pointers
-	NODE_FEATURE_TYPE_NODE = 24, // Node feature type
-	NODE_FEATURE_TYPE_EDGE = 25, // Edge feature type
-	NODE_FEATURE_TYPE_STENCIL = 26, // Stencil feature type
-	NODE_FEATURE_TYPE_GENEALOGY = 27, // Genealogy feature type
-	NODE_FEATURE_TYPE_EMERGENCE = 28, // Emergence feature type
-	NODE_FEATURE_TYPE_LINKED_LIST = 29, // Linked list feature type
-	NODE_FEATURE_TYPE_DICTIONARY = 30, // Dictionary feature type
-	NODE_FEATURE_TYPE_SET = 31, // Set feature type
-	NODE_FEATURE_TYPE_MAP = 32, // Map feature type
-	NODE_FEATURE_TYPE_PARALLEL_LIST = 33, // Parallel list feature type
-	NODE_FEATURE_TYPE_LIST = 34, // List feature type
-	NODE_FEATURE_TYPE_POINTER_TOKEN = 35, // Pointer token feature type
-	NODE_FEATURE_TYPE_GUARDIAN = 36, // Guardian feature type
-	NODE_FEATURE_TYPE_TOKEN = 37, // Guardian token feature type
-	NODE_FEATURE_TYPE_OBJECT_SET = 38, // Guardian object set feature type
-	NODE_FEATURE_TYPE_MEMORY_TOKEN = 39, // Memory token feature type
-	NODE_FEATURE_TYPE_TOKEN_LOCK = 40, // Token lock feature type
-	NODE_FEATURE_TYPE_MEMORY_MAP = 41, // Memory map feature type
-	NODE_FEATURE_TYPE_MESSAGE = 42, // Guardian message feature type
-	NODE_FEATURE_TYPE_CUSTOM = 43, // Custom feature type for user-defined features
 
-} NodeFeatureType;
 
 typedef struct GuardianMessage {
 	GuardianToken self; // Self-reference for the message object

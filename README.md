@@ -5,6 +5,7 @@ A foundational, high-performance C++ engine for vectorized geometry processing a
 Designed from the ground up for demanding applications in simulation, computational physics, computer graphics, and machine learning, this library provides the intricate machinery needed to model complex systems.
 
 ## Design Philosophy
+
 The engine is built on a set of core principles that prioritize performance, mathematical rigor, and future-readiness.
 
 - **Vectorization & Performance:** At its core, the library is designed for vectorization. By leveraging Eigen for tensor operations and enforcing a vectorized-first approach, it achieves the performance required for large-scale simulations and data processing tasks.
@@ -20,6 +21,7 @@ The engine is built on a set of core principles that prioritize performance, mat
 - **Extensibility & Agent Readiness:** With clear modular boundaries and composable, mesh-agnostic operations, the architecture is designed for extensibility. It anticipates integration with autonomous agents and future hardware like GPUs, providing a robust platform for next-generation computational tools.
 
 ## Timeline
+
 This repository is currently a scaffold. The code contains many placeholders and
 stubs, so the items below describe the intended structure rather than completed
 milestones:
@@ -49,6 +51,7 @@ marked `TODO` or return placeholder values. The code base serves mainly as a
 map of where functionality should grow.
 
 ## Architecture
+
 The library is structured in layers, from low-level backend execution to a high-level user-facing API. This design promotes modularity and allows different parts of the system to be developed and optimized independently.
 
 ```text
@@ -66,6 +69,8 @@ The library is structured in layers, from low-level backend execution to a high-
 ║ • rigidbodysim - iterative solver for physics models             ║
 ║ • flowsimulator - DEC & Laplace field tool                       ║
 ║ • crt simulator - advanced CRT renderer                          ║
+║ • spectrograph - console or 2D spectrogram viewer                ║
+║ • isoshell viewer - 3D isosurface visualizer                     ║
 ╚══════════════════════════════════════════════════════════════════╝
                      ▲
                      │
@@ -84,15 +89,17 @@ The library is structured in layers, from low-level backend execution to a high-
 ║ • guardian_platform.h/c           (Delocalizer)                  ║
 ║ • guardian_platform_extended.h    (Input & rendering)            ║
 ║ • cross_process_api.h/c           (Cross-process messaging)      ║
-║ • utils.h/c                       (Dynamic Primitives)           ║
+║ • utils.h/c                       (Guardian dynamic primitives:  ║
+║      Node/Edge, linked lists, sets, maps, heaps, tokens, stacks, ║
+║      messaging, emergence)                                       ║
 ║ • execution_graph.h/c             (Task orchestrator)            ║
 ║ • parametric_domain.h/c           (Lossless Domains)             ║
 ║ • parametric_transform.h/c        (Continuous Geometry)          ║
 ║ • dec.h/c                         (Differential Edge Calculus)   ║
-║ • dag.h/c                         (Wrap Counting Directional Graphs) ║
+║ • dag.h/c                     (Wrap Counting Directional Graphs) ║
 ║ • graph_ops.h/c                   (graph API)                    ║
 ║ • stencil.h/.c                    (N-D interaction map)          ║
-║ • geneology.h/c                   (Advanced relationship tracking) ║
+║ • geneology.h/c                 (Advanced relationship tracking) ║
 ║ • metric_tensor.h/c               (N-D Capability)               ║
 ║ • laplace_beltrami.h/c            (Core Physics)                 ║
 ║ • eigensolver.h/c                 (Eigenmode Decomposition)      ║
@@ -102,24 +109,29 @@ The library is structured in layers, from low-level backend execution to a high-
 ║ • double_buffer.h/c               (generic db byte arrays)       ║
 ║ • diff_print.h/c                  (differential buffer updating) ║
 ║ • iterative_solver.h/c            (iterative convergence engine) ║
-║ • histogram_normalization.h/c     (histogram aware normalization) ║
-║ • envelopes.h/c                   (parametric and quantized ADSR) ║
+║ • histogram_normalization.h/c    (histogram aware normalization) ║
+║ • envelopes.h/c                  (parametric and quantized ADSR) ║
 ║ • fft.h/c                         (FFT capabilities)             ║
 ║ • synthesizer.h/c                 (signal generation core)       ║
-║ • pidgeon_solver.h/c              (probabilistic pigeonhole solver) ║
+║ • pidgeon_solver.h/c           (probabilistic pigeonhole solver) ║
 ║ • auxin_diffusion.h/c             (simulated plant exploration)  ║
+║ • youngman_algorithm.h/c          (vectorized marching-kernel    ║
+║                                  for isoshell discovery)         ║
 ╚══════════════════════════════════════════════════════════════════╝
                      ▲
                      │
 ╔══════════════════════════════════════════════════════════════════╗
 ║ Backend Execution Layer                                          ║
+║ • Delayed execution graphs                                       ║
+║ • Asynchronous double buffered computation                       ║
 ║ • Eigen tensor broadcasts                                        ║
-║ • ONNX graph executor                                            ║
+║ • ONNX ML framework                                              ║
 ║ • Batch deployed OpenGL/GLSL compute shaders                     ║
 ╚══════════════════════════════════════════════════════════════════╝
 ```
 
 ## Module Overview
+
 The code base is organised into small, self‑contained headers.  Below is an
 outline of the main pieces, their pure mathematical roots and practical roles.
 
@@ -128,7 +140,7 @@ outline of the main pieces, their pure mathematical roots and practical roles.
 | `guardian_platform.h`     | Operating Systems               | Delocalizes OS features with portable threading, I/O, and timing, forming the base for input and rendering layers. |
 | `guardian_platform_extended.h` | Device Interfaces            | Enumerates input devices and captures cross-platform events to enable integrated rendering pipelines. |
 | `guardian_renderer.h`     | Computer Graphics               | An extensible rendering frontend for visualizing models, with backends for both terminal ASCII art and graphical windows via OpenGL.                               |
-| `utils.h`                 | Graph theory & set theory       | Core graph primitives defining the `Node` as a fundamental unit of data and connectivity, with support for feature vectors and relational links.                   |
+| `utils.h`                 | Graph theory & set theory       | Guardian dynamic primitives: Node/Edge, linked lists, sets, maps, heaps, tokens, stacks, messaging, emergence. |
 | `graph_ops.h`             | Graph algorithms, category theory | Abstracts common graph operations (push/pop, slicing, search) across containers like genealogies or DAGs.                                                        |
 | `dag.h`/`dag.c`           | Directed acyclic graphs         | Implements the Directed Acyclic Graph (DAG) for building deferred computation pipelines, essential for automatic differentiation and complex model execution.      |
 | `parametric_domain.h`     | Topology & manifolds            | A sophisticated engine for defining N-dimensional manifolds with fine-grained control over boundaries (inclusive, exclusive, infinite), periodicity, and discontinuities. |
@@ -148,6 +160,7 @@ outline of the main pieces, their pure mathematical roots and practical roles.
 | `synthesizer.h`           | Signal processing              | Core oscillator for simple waveform generation. |
 | `pidgeon_solver.h`        | Probability theory             | Estimates collision likelihood when mapping many items into few buckets. |
 | `auxin_diffusion.h`       | Biological modeling            | Simulates resource-driven growth using auxin-like diffusion. |
+| `youngman_algorithm.h/c`  | Computational geometry         | Vectorized marching-kernel for isoshell discovery, builds dynamic bitmask libraries for parallel execution. |
 
 These components combine to express shapes common in engineering (lines,
 surfaces, volumes) and arbitrary parametrised forms.  They are designed to work
@@ -155,6 +168,7 @@ with future DEC kernels so that continuous descriptions can be discretised on
 demand.
 
 ## Neural Network Integration
+
 The engine bundles a lightweight neural network system built on top of the DAG
 infrastructure.  Each network registers a collection of DAGs as differentiable
 steps, with user-provided forward and backward callbacks.  Custom functions can
@@ -162,6 +176,7 @@ be appended through the `NeuralNetworkFunctionRepo`, enabling gradient-based
 learning and experimental architectures that operate directly on geometric data.
 
 ## Contributing
+
 This project is a platform for next-generation geometry, simulation, and learning systems. Contributors are encouraged to design with the following principles in mind:
 
 - **Embrace Functional & Composable Design:** Prefer pure functions and operations that can be chained together.

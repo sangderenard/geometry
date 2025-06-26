@@ -7,96 +7,180 @@ extern "C" {
 
 #include "geometry/graph_ops.h"
 
-/* Error codes for GraphOpsHandler */
-#define GRAPH_OPS_OK 0
-#define GRAPH_OPS_ERR -1
+/* Auto-detect and include suite implementation headers */
+#if defined(__has_include)
+  #if __has_include("geometry/graph_ops_int.h")
+    #include "geometry/graph_ops_int.h"
+    #define HAS_OP_SUITE_INT
+  #endif
+  #if __has_include("geometry/graph_ops_uint.h")
+    #include "geometry/graph_ops_uint.h"
+    #define HAS_OP_SUITE_UINT
+  #endif
+  /* Repeat for other primitive suite headers */
+  #if __has_include("geometry/graph_ops_node.h")
+    #include "geometry/graph_ops_node.h"
+    #define HAS_OP_SUITE_NODE
+  #endif
+  #if __has_include("geometry/graph_ops_dag.h")
+    #include "geometry/graph_ops_dag.h"
+    #define HAS_OP_SUITE_DAG
+  #endif
+  #if __has_include("geometry/graph_ops_neuralnetwork.h")
+    #include "geometry/graph_ops_neuralnetwork.h"
+    #define HAS_OP_SUITE_NEURALNETWORK
+  #endif
+  #if __has_include("geometry/graph_ops_linkedlist.h")
+    #include "geometry/graph_ops_linkedlist.h"
+    #define HAS_OP_SUITE_LINKEDLIST
+  #endif
+  #if __has_include("geometry/graph_ops_list.h")
+    #include "geometry/graph_ops_list.h"
+    #define HAS_OP_SUITE_LIST
+  #endif
+  #if __has_include("geometry/graph_ops_parallel_list.h")
+    #include "geometry/graph_ops_parallel_list.h"
+    #define HAS_OP_SUITE_PARALLEL_LIST
+  #endif
+  #if __has_include("geometry/graph_ops_dict.h")
+    #include "geometry/graph_ops_dict.h"
+    #define HAS_OP_SUITE_DICT
+  #endif
+  #if __has_include("geometry/graph_ops_set.h")
+    #include "geometry/graph_ops_set.h"
+    #define HAS_OP_SUITE_SET
+  #endif
+  #if __has_include("geometry/graph_ops_map.h")
+    #include "geometry/graph_ops_map.h"
+    #define HAS_OP_SUITE_MAP
+  #endif
+  #if __has_include("geometry/graph_ops_heap.h")
+    #include "geometry/graph_ops_heap.h"
+    #define HAS_OP_SUITE_HEAP
+  #endif
+  #if __has_include("geometry/graph_ops_mailbox.h")
+    #include "geometry/graph_ops_mailbox.h"
+    #define HAS_OP_SUITE_MAILBOX
+  #endif
+  #if __has_include("geometry/graph_ops_token.h")
+    #include "geometry/graph_ops_token.h"
+    #define HAS_OP_SUITE_TOKEN
+  #endif
+  #if __has_include("geometry/graph_ops_object_set.h")
+    #include "geometry/graph_ops_object_set.h"
+    #define HAS_OP_SUITE_OBJECT_SET
+  #endif
+  #if __has_include("geometry/graph_ops_stack.h")
+    #include "geometry/graph_ops_stack.h"
+    #define HAS_OP_SUITE_STACK
+  #endif
+  #if __has_include("geometry/graph_ops_stencil_set.h")
+    #include "geometry/graph_ops_stencil_set.h"
+    #define HAS_OP_SUITE_STENCIL_SET
+  #endif
+  #if __has_include("geometry/graph_ops_emergence.h")
+    #include "geometry/graph_ops_emergence.h"
+    #define HAS_OP_SUITE_EMERGENCE
+  #endif
+  /* Feature-type suite headers */
+  #if __has_include("geometry/graph_ops_vector_int.h")
+    #include "geometry/graph_ops_vector_int.h"
+    #define HAS_OP_SUITE_VECTOR_INT
+  #endif
+  #if __has_include("geometry/graph_ops_vector_float.h")
+    #include "geometry/graph_ops_vector_float.h"
+    #define HAS_OP_SUITE_VECTOR_FLOAT
+  #endif
+  #if __has_include("geometry/graph_ops_vector_double.h")
+    #include "geometry/graph_ops_vector_double.h"
+    #define HAS_OP_SUITE_VECTOR_DOUBLE
+  #endif
+  #if __has_include("geometry/graph_ops_vector_string.h")
+    #include "geometry/graph_ops_vector_string.h"
+    #define HAS_OP_SUITE_VECTOR_STRING
+  #endif
+  #if __has_include("geometry/graph_ops_vector_boolean.h")
+    #include "geometry/graph_ops_vector_boolean.h"
+    #define HAS_OP_SUITE_VECTOR_BOOLEAN
+  #endif
+  #if __has_include("geometry/graph_ops_vector_pointer.h")
+    #include "geometry/graph_ops_vector_pointer.h"
+    #define HAS_OP_SUITE_VECTOR_POINTER
+  #endif
+  #if __has_include("geometry/graph_ops_tensor_int.h")
+    #include "geometry/graph_ops_tensor_int.h"
+    #define HAS_OP_SUITE_TENSOR_INT
+  #endif
+  #if __has_include("geometry/graph_ops_tensor_float.h")
+    #include "geometry/graph_ops_tensor_float.h"
+    #define HAS_OP_SUITE_TENSOR_FLOAT
+  #endif
+  #if __has_include("geometry/graph_ops_tensor_double.h")
+    #include "geometry/graph_ops_tensor_double.h"
+    #define HAS_OP_SUITE_TENSOR_DOUBLE
+  #endif
+  #if __has_include("geometry/graph_ops_tensor_string.h")
+    #include "geometry/graph_ops_tensor_string.h"
+    #define HAS_OP_SUITE_TENSOR_STRING
+  #endif
+  #if __has_include("geometry/graph_ops_tensor_boolean.h")
+    #include "geometry/graph_ops_tensor_boolean.h"
+    #define HAS_OP_SUITE_TENSOR_BOOLEAN
+  #endif
+  #if __has_include("geometry/graph_ops_tensor_pointer.h")
+    #include "geometry/graph_ops_tensor_pointer.h"
+    #define HAS_OP_SUITE_TENSOR_POINTER
+  #endif
+  #if __has_include("geometry/graph_ops_tensor_vector_int.h")
+    #include "geometry/graph_ops_tensor_vector_int.h"
+    #define HAS_OP_SUITE_TENSOR_VECTOR_INT
+  #endif
+  #if __has_include("geometry/graph_ops_tensor_vector_float.h")
+    #include "geometry/graph_ops_tensor_vector_float.h"
+    #define HAS_OP_SUITE_TENSOR_VECTOR_FLOAT
+  #endif
+  #if __has_include("geometry/graph_ops_tensor_vector_double.h")
+    #include "geometry/graph_ops_tensor_vector_double.h"
+    #define HAS_OP_SUITE_TENSOR_VECTOR_DOUBLE
+  #endif
+  #if __has_include("geometry/graph_ops_tensor_vector_string.h")
+    #include "geometry/graph_ops_tensor_vector_string.h"
+    #define HAS_OP_SUITE_TENSOR_VECTOR_STRING
+  #endif
+  #if __has_include("geometry/graph_ops_tensor_vector_boolean.h")
+    #include "geometry/graph_ops_tensor_vector_boolean.h"
+    #define HAS_OP_SUITE_TENSOR_VECTOR_BOOLEAN
+  #endif
+  #if __has_include("geometry/graph_ops_node_feature.h")
+    #include "geometry/graph_ops_node_feature.h"
+    #define HAS_OP_SUITE_NODE_FEATURE
+  #endif
+  #if __has_include("geometry/graph_ops_edge.h")
+    #include "geometry/graph_ops_edge.h"
+    #define HAS_OP_SUITE_EDGE
+  #endif
+  #if __has_include("geometry/graph_ops_stencil.h")
+    #include "geometry/graph_ops_stencil.h"
+    #define HAS_OP_SUITE_STENCIL
+  #endif
+  #if __has_include("geometry/graph_ops_geneology.h")
+    #include "geometry/graph_ops_geneology.h"
+    #define HAS_OP_SUITE_GENEALOGY_OP
+  #endif
+  #if __has_include("geometry/graph_ops_emergence.h")
+    /* already included above */
+  #endif
+  /* Additional detections for utils primitives e.g. linkedlist, dict, set, etc. */
+#endif /* __has_include */
 
-/*
- * GraphOpsHandler provides a thin indirection layer over a GraphOps table.
- * It allows containers to register their operation implementations and
- * clients to call the standard GraphOps interface with built-in null
- * checks. If a particular function pointer is not provided, the wrapper
- * returns GRAPH_OPS_ERR (or NULL for pointer-returning operations).
+/* Array of pointers to each suite; defined in graph_ops_handler.c */
+extern const OperationSuite* const OperationSuites[];
+
+/**
+ * Retrieve the OperationSuite for the given type.
+ * Returns NULL if the suite is not available or type is invalid.
  */
-typedef struct {
-    const GraphOps* ops;
-} GraphOpsHandler;
-
-static inline int graph_ops_handler_init(GraphOpsHandler* h, const GraphOps* ops) {
-    if (!h) return GRAPH_OPS_ERR;
-    h->ops = ops;
-    return GRAPH_OPS_OK;
-}
-
-static inline int graph_ops_push(const GraphOpsHandler* h, Node* n, Node* child) {
-    if (!h || !h->ops || !h->ops->push) return GRAPH_OPS_ERR;
-    h->ops->push(n, child);
-    return GRAPH_OPS_OK;
-}
-
-static inline Node* graph_ops_pop(const GraphOpsHandler* h, Node* n) {
-    return (!h || !h->ops || !h->ops->pop) ? NULL : h->ops->pop(n);
-}
-
-static inline Node* graph_ops_shift(const GraphOpsHandler* h, Node* n) {
-    return (!h || !h->ops || !h->ops->shift) ? NULL : h->ops->shift(n);
-}
-
-static inline int graph_ops_unshift(const GraphOpsHandler* h, Node* n, Node* child) {
-    if (!h || !h->ops || !h->ops->unshift) return GRAPH_OPS_ERR;
-    h->ops->unshift(n, child);
-    return GRAPH_OPS_OK;
-}
-
-static inline Node* graph_ops_get(const GraphOpsHandler* h, Node* n, size_t idx) {
-    return (!h || !h->ops || !h->ops->get) ? NULL : h->ops->get(n, idx);
-}
-
-static inline size_t graph_ops_size(const GraphOpsHandler* h, Node* n) {
-    return (!h || !h->ops || !h->ops->size) ? 0 : h->ops->size(n);
-}
-
-static inline int graph_ops_sort(const GraphOpsHandler* h, Node* n,
-                                 int (*cmp)(const Node*, const Node*)) {
-    if (!h || !h->ops || !h->ops->sort) return GRAPH_OPS_ERR;
-    h->ops->sort(n, cmp);
-    return GRAPH_OPS_OK;
-}
-
-static inline Node* graph_ops_search(const GraphOpsHandler* h, Node* n,
-                                     int (*pred)(const Node*, void*), void* user) {
-    return (!h || !h->ops || !h->ops->search) ? NULL : h->ops->search(n, pred, user);
-}
-
-static inline Node* graph_ops_left(const GraphOpsHandler* h, Node* n) {
-    return (!h || !h->ops || !h->ops->left) ? NULL : h->ops->left(n);
-}
-
-static inline Node* graph_ops_right(const GraphOpsHandler* h, Node* n) {
-    return (!h || !h->ops || !h->ops->right) ? NULL : h->ops->right(n);
-}
-
-static inline Node* graph_ops_up(const GraphOpsHandler* h, Node* n) {
-    return (!h || !h->ops || !h->ops->up) ? NULL : h->ops->up(n);
-}
-
-static inline Node* graph_ops_down(const GraphOpsHandler* h, Node* n) {
-    return (!h || !h->ops || !h->ops->down) ? NULL : h->ops->down(n);
-}
-
-static inline int graph_ops_slice(const GraphOpsHandler* h, Node* n,
-                                  size_t start, size_t end, Node** out) {
-    if (!h || !h->ops || !h->ops->slice) return GRAPH_OPS_ERR;
-    h->ops->slice(n, start, end, out);
-    return GRAPH_OPS_OK;
-}
-
-static inline int graph_ops_stencil(const GraphOpsHandler* h, Node* n,
-                                    const size_t* indices, size_t count, Node** out) {
-    if (!h || !h->ops || !h->ops->stencil) return GRAPH_OPS_ERR;
-    h->ops->stencil(n, indices, count, out);
-    return GRAPH_OPS_OK;
-}
+const OperationSuite* get_operation_suite(OperationSuiteType type);
 
 #ifdef __cplusplus
 }
