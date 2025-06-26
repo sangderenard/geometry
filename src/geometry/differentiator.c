@@ -1,9 +1,9 @@
 /// differentiator.c
 /// Implementation stubs for differentiator engine
 
-#include "differentiator.h"
-#include "utils.h"
-#include "guardian_platform.h"
+#include "geometry/differentiator.h"
+#include "geometry/utils.h"
+#include "geometry/guardian_platform.h"
 #include <stdlib.h>
 #include <string.h>
 

@@ -42,6 +42,19 @@ typedef unsigned char boolean;
 #include "geometry/stencil.h"
 #include "geometry/parametric_domain.h"
 
+/* Forward declarations for types used before definition */
+typedef struct GuardianLinkedList GuardianLinkedList;
+typedef struct GuardianList GuardianList;
+typedef struct GuardianParallelList GuardianParallelList;
+typedef struct GuardianDict GuardianDict;
+typedef struct GuardianSet GuardianSet;
+typedef struct GuardianMap GuardianMap;
+typedef struct GuardianStencilSet GuardianStencilSet;
+typedef struct GuardianGeneology GuardianGeneology;
+typedef struct GuardianHeap GuardianHeap;
+typedef struct GuardianThread GuardianThread;
+typedef struct TokenGuardian TokenGuardian;
+
 // --- Emergence structure for node-level adaptation ---
 typedef struct Emergence Emergence;
 
@@ -428,56 +441,6 @@ typedef struct GuardianSimpleGraph {
 	GuardianSet edges; // Set of edges in the graph
 
 } GuardianSimpleGraph;
-
-// --- Dag structure ---
-typedef struct Dag {
-    DagManifest* manifests;
-    size_t num_manifests, cap_manifests;
-} Dag;
-
-typedef struct DagManifest {
-    DagManifestLevel* levels;
-    size_t num_levels;
-} DagManifest;
-
-typedef struct DagManifestLevel {
-    DagManifestMapping* mappings;
-    size_t num_mappings;
-    int level_index;
-} DagManifestLevel;
-
-typedef struct DagManifestMapping {
-    Node** inputs;
-    size_t num_inputs;
-    Node** outputs;
-    size_t num_outputs;
-} DagManifestMapping;
-
-// --- NeuralNetwork structure ---
-typedef struct NeuralNetwork {
-    Dag* dags[NN_MAX_DAGS];
-    size_t num_dags;
-    NeuralNetworkStep* steps[NN_MAX_DAGS][NN_MAX_STEPS];
-    size_t num_steps[NN_MAX_DAGS];
-    NeuralNetworkFunctionRepo function_repo;
-} NeuralNetwork;
-
-typedef struct NeuralNetworkStep {
-    NNForwardFn forward;
-    NNBackwardFn backward;
-    void* user_data;
-} NeuralNetworkStep;
-
-typedef struct NeuralNetworkFunctionRepo {
-    NeuralNetworkFunctionEntry entries[NN_MAX_FUNCTIONS];
-    size_t num_entries;
-} NeuralNetworkFunctionRepo;
-
-typedef struct NeuralNetworkFunctionEntry {
-    const char* name;
-    NNForwardFn forward;
-    NNBackwardFn backward;
-} NeuralNetworkFunctionEntry;
 
 // === Object Types Enum ===
 typedef enum {
