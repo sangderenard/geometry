@@ -20,8 +20,9 @@ The engine is built on a set of core principles that prioritize performance, mat
 - **Extensibility & Agent Readiness:** With clear modular boundaries and composable, mesh-agnostic operations, the architecture is designed for extensibility. It anticipates integration with autonomous agents and future hardware like GPUs, providing a robust platform for next-generation computational tools.
 
 ## Timeline
-The repository has steadily grown from simple node utilities into a flexible
-geometry engine.  Major milestones include:
+This repository is currently a scaffold. The code contains many placeholders and
+stubs, so the items below describe the intended structure rather than completed
+milestones:
 
 - **Initial scaffold** – base data types and early DAG/DEC sketches.
 - **Node linking utilities** – bi-directional relationships and activation
@@ -41,6 +42,11 @@ geometry engine.  Major milestones include:
 - **Auxin diffusion** – plant-inspired environment exploration algorithms.
 - **Pidgeon solver** – probabilistic approach to the pigeonhole problem.
 - **Synthesizer core** – simple signal generation utilities.
+
+Most of these features are only partially implemented. Large portions of
+`graph_ops.c`, the differentiator engine, and the relational vector module are
+marked `TODO` or return placeholder values. The code base serves mainly as a
+map of where functionality should grow.
 
 ## Architecture
 The library is structured in layers, from low-level backend execution to a high-level user-facing API. This design promotes modularity and allows different parts of the system to be developed and optimized independently.
