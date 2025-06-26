@@ -54,7 +54,12 @@ const OperationSuite* const OperationSuites[NODE_FEATURE_TYPE_COUNT] = {
     &graph_ops_tensor_complex,     /* NODE_FEATURE_TYPE_TENSOR_COMPLEX */
     &graph_ops_tensor_complex_double,/* NODE_FEATURE_TYPE_TENSOR_COMPLEX_DOUBLE */
     &graph_ops_tensor_vector_complex,/* NODE_FEATURE_TYPE_TENSOR_VECTOR_COMPLEX */
-    &graph_ops_tensor_vector_complex_double/* NODE_FEATURE_TYPE_TENSOR_VECTOR_COMPLEX_DOUBLE */
+    &graph_ops_tensor_vector_complex_double,/* NODE_FEATURE_TYPE_TENSOR_VECTOR_COMPLEX_DOUBLE */
+    &graph_ops_bitfield,            /* NODE_FEATURE_TYPE_BITFIELD */
+    &graph_ops_bytefield,           /* NODE_FEATURE_TYPE_BYTEFIELD */
+    &graph_ops_radix_encoding,      /* NODE_FEATURE_TYPE_RADIX_ENCODING */
+    &graph_ops_pattern_palette_stream, /* NODE_FEATURE_TYPE_PATTERN_PALETTE_STREAM */
+    &graph_ops_encoding_engine      /* NODE_FEATURE_TYPE_ENCODING_ENGINE */
 };
 
 const OperationSuite* get_operation_suite(NodeFeatureType type) {
