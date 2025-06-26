@@ -35,59 +35,82 @@ geometry engine.  Major milestones include:
   operations on geneologies.
 - **Emergent stencil vision** – establishing expectations for scalable physics
   modeling.
+- **Iterative solver** – modular engine for extrapolating simulations with
+  controllable convergence parameters.
+- **Emergence framework** – cellular division and growth parameters for graphs.
+- **Auxin diffusion** – plant-inspired environment exploration algorithms.
+- **Pidgeon solver** – probabilistic approach to the pigeonhole problem.
+- **Synthesizer core** – simple signal generation utilities.
 
 ## Architecture
 The library is structured in layers, from low-level backend execution to a high-level user-facing API. This design promotes modularity and allows different parts of the system to be developed and optimized independently.
 
 ```text
-┌──────────────────────────────────────────┐
-│  Application / User Code                 │
-│  • Maximum efficiency in complex math    │
-|  * Advanced differential rendering       │
-│  • Numerous convenience utilities        │
-|  * Built-in learning                     |
-|  * Graph-native performance              |
-└──────────────────────────────────────────┘
-                 ▲
-                 │
-┌──────────────────────────────────────────┐
-│  High-Level API Layer                    │
-│  • Guardian dynamic primitives           │
-|  * Cross-domain utilities                │
-|  * Efficient rendering engine            │
-│  • Responsive and interactive geometries │
-│  • Classic physics simulations vectorized│
-└──────────────────────────────────────────┘
-                 ▲
-                 │
-┌───────────────  ───────────────────────────┐
-│  Core Domain Modules                       │
-|  * guardian_environment.h/c  (Delocalizing)|
-│  • utils.h/c           (Dynamic Primitives)│
-│  • parametric_domain.h/c (Lossless Domains)│
-|  * parametric_transform.h/c (Continuous Geometry)
-|  * dec.h/c     (Differential Edge Calculus)|
-|  * dag.h/c (Wrap Counting Directional Graphs)
-│  • graph_ops.h/c                (graph API)│
-|  * stencil.h/.c (complex, multi-domain, n-d connectivity map)
-|  * geneology.h/c (Advanced relationship tracking)
-|  * metric_tensor.h/c       (N-D Capability)│
-│  • laplace_beltrami.h/c      (Core Physics)│
-|  * eigensolver.h/c (Eigenmode Decomposition)
-│  • kernels.h/c              (Graph Kernels)│
-│  • interpolator.h/c  (Reticulating Splines)│
-│  • differentiator.h/c (difference/integration engine)
-|  * double_buffer.h/c (generic db byte arrays)
-|  * diff_print.h/c (differential buffer updating)
-└────────────────  ──────────────────────────┘
-                 ▲
-                 │
-┌───────────────    ───────────────────────────┐
-│  Backend Execution Layer                     │
-│  • Eigen tensor broadcasts                   │
-│  • ONNX graph executor                       │
-│  • Batch deployed OpenGL/GLSL compute shaders│
-└───────────────────    ───────────────────────┘
+╔══════════════════════════════════════════════════════════════════╗
+║ Application / User Code                                          ║
+║ • Maximum efficiency in complex math                             ║
+║ • Advanced differential rendering                                ║
+║ • Numerous convenience utilities                                 ║
+║ • Built-in learning                                              ║
+║ • Graph-native performance                                       ║
+║ • hull - ASCII/2D/3D hull editor and visualizer                  ║
+║ • oscilliscope - console or 2D waveform viewer                   ║
+║ • vid2ascii - buffer to ASCII renderer                           ║
+║ • fitfile GPS visualizer - 3D activity mapper                    ║
+║ • rigidbodysim - iterative solver for physics models             ║
+║ • flowsimulator - DEC & Laplace field tool                       ║
+║ • crt simulator - advanced CRT renderer                          ║
+╚══════════════════════════════════════════════════════════════════╝
+                     ▲
+                     │
+╔══════════════════════════════════════════════════════════════════╗
+║ High-Level API Layer                                             ║
+║ • Guardian dynamic primitives                                    ║
+║ • Cross-domain utilities                                         ║
+║ • Efficient rendering engine                                     ║
+║ • Responsive and interactive geometries                          ║
+║ • Classic physics simulations vectorized                         ║
+╚══════════════════════════════════════════════════════════════════╝
+                     ▲
+                     │
+╔══════════════════════════════════════════════════════════════════╗
+║ Core Domain Modules                                              ║
+║ • guardian_platform.h/c           (Delocalizer)                  ║
+║ • guardian_platform_extended.h    (Input & rendering)            ║
+║ • cross_process_api.h/c           (Cross-process messaging)      ║
+║ • utils.h/c                       (Dynamic Primitives)           ║
+║ • execution_graph.h/c             (Task orchestrator)            ║
+║ • parametric_domain.h/c           (Lossless Domains)             ║
+║ • parametric_transform.h/c        (Continuous Geometry)          ║
+║ • dec.h/c                         (Differential Edge Calculus)   ║
+║ • dag.h/c                         (Wrap Counting Directional Graphs) ║
+║ • graph_ops.h/c                   (graph API)                    ║
+║ • stencil.h/.c                    (N-D interaction map)          ║
+║ • geneology.h/c                   (Advanced relationship tracking) ║
+║ • metric_tensor.h/c               (N-D Capability)               ║
+║ • laplace_beltrami.h/c            (Core Physics)                 ║
+║ • eigensolver.h/c                 (Eigenmode Decomposition)      ║
+║ • kernels.h/c                     (Graph Kernels)                ║
+║ • interpolator.h/c                (Reticulating Splines)         ║
+║ • differentiator.h/c              (difference/integration engine)║
+║ • double_buffer.h/c               (generic db byte arrays)       ║
+║ • diff_print.h/c                  (differential buffer updating) ║
+║ • iterative_solver.h/c            (iterative convergence engine) ║
+║ • histogram_normalization.h/c     (histogram aware normalization) ║
+║ • envelopes.h/c                   (parametric and quantized ADSR) ║
+║ • fft.h/c                         (FFT capabilities)             ║
+║ • synthesizer.h/c                 (signal generation core)       ║
+║ • pidgeon_solver.h/c              (probabilistic pigeonhole solver) ║
+║ • auxin_diffusion.h/c             (simulated plant exploration)  ║
+╚══════════════════════════════════════════════════════════════════╝
+                     ▲
+                     │
+╔══════════════════════════════════════════════════════════════════╗
+║ Backend Execution Layer                                          ║
+║ • Eigen tensor broadcasts                                        ║
+║ • ONNX graph executor                                            ║
+║ • Batch deployed OpenGL/GLSL compute shaders                     ║
+╚══════════════════════════════════════════════════════════════════╝
 ```
 
 ## Module Overview
@@ -96,7 +119,8 @@ outline of the main pieces, their pure mathematical roots and practical roles.
 
 | Module | Maths background | Layperson description |
 |---------------------------|---------------------------------|----------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| `guardian_platform.h`     | Operating Systems               | A clean abstraction layer over the host OS, providing portable interfaces for threading, mutexes, file I/O, and high-precision timing.                             |
+| `guardian_platform.h`     | Operating Systems               | Delocalizes OS features with portable threading, I/O, and timing, forming the base for input and rendering layers. |
+| `guardian_platform_extended.h` | Device Interfaces            | Enumerates input devices and captures cross-platform events to enable integrated rendering pipelines. |
 | `guardian_renderer.h`     | Computer Graphics               | An extensible rendering frontend for visualizing models, with backends for both terminal ASCII art and graphical windows via OpenGL.                               |
 | `utils.h`                 | Graph theory & set theory       | Core graph primitives defining the `Node` as a fundamental unit of data and connectivity, with support for feature vectors and relational links.                   |
 | `graph_ops.h`             | Graph algorithms, category theory | Abstracts common graph operations (push/pop, slicing, search) across containers like genealogies or DAGs.                                                        |
@@ -109,11 +133,27 @@ outline of the main pieces, their pure mathematical roots and practical roles.
 | `interpolator.h/cpp`      | Spline Theory, Numerical Analysis | A sophisticated interpolation engine for "reticulating splines," enabling smooth reconstruction of data and fields across discrete points on a manifold or graph. |
 | `modspace.h`              | Analysis                        | Generates modulated parameter ranges (non‑linear spacing).                                                                                                     |
 | `stencil.h`               | Numerical methods, field theory | A powerful API for defining local operators. Supports not just classical grid stencils but generalized, n-dimensional interaction fields for emergent numerical methods. |
+| `iterative_solver.h`      | Numerical analysis             | Simple iterative solver for extrapolating simulations and driving convergence-controlled updates. |
+| `histogram_normalization.h` | Statistics                     | Suite of advanced methods for histogram-based data normalization. |
+| `execution_graph.h`       | Scheduler theory               | Executes dependent tasks in an ordered graph. |
+| `envelopes.h`             | Signal processing              | Parametric and quantized ADSR or custom envelope modeling. |
+| `fft.h`                   | Harmonic analysis              | Lightweight FFT implementation for spectral transforms. |
+| `cross_process_api.h`     | Operating Systems              | Cross-process messaging and synchronization primitives. |
+| `synthesizer.h`           | Signal processing              | Core oscillator for simple waveform generation. |
+| `pidgeon_solver.h`        | Probability theory             | Estimates collision likelihood when mapping many items into few buckets. |
+| `auxin_diffusion.h`       | Biological modeling            | Simulates resource-driven growth using auxin-like diffusion. |
 
 These components combine to express shapes common in engineering (lines,
 surfaces, volumes) and arbitrary parametrised forms.  They are designed to work
 with future DEC kernels so that continuous descriptions can be discretised on
 demand.
+
+## Neural Network Integration
+The engine bundles a lightweight neural network system built on top of the DAG
+infrastructure.  Each network registers a collection of DAGs as differentiable
+steps, with user-provided forward and backward callbacks.  Custom functions can
+be appended through the `NeuralNetworkFunctionRepo`, enabling gradient-based
+learning and experimental architectures that operate directly on geometric data.
 
 ## Contributing
 This project is a platform for next-generation geometry, simulation, and learning systems. Contributors are encouraged to design with the following principles in mind:

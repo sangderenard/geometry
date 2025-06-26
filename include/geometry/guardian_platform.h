@@ -24,7 +24,7 @@
   #include <windows.h>
   #include <io.h>
   #include <direct.h>
-  #define PATH_SEPARATOR '\'
+  #define PATH_SEPARATOR '\\'
 #else
   #include <pthread.h>
   #include <unistd.h>

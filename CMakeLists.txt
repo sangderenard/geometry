@@ -32,3 +32,7 @@ add_test(NAME utils_test COMMAND utils_test)
 add_executable(graph_ops_handler_test tests/graph_ops_handler_test.c)
 target_link_libraries(graph_ops_handler_test geometry)
 add_test(NAME graph_ops_handler_test COMMAND graph_ops_handler_test)
+
+add_executable(iterative_solver_test tests/iterative_solver_test.c)
+target_link_libraries(iterative_solver_test geometry)
+add_test(NAME iterative_solver_test COMMAND iterative_solver_test)
