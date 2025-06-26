@@ -112,6 +112,7 @@ The library is structured in layers, from low-level backend execution to a high-
 ║ • histogram_normalization.h/c    (histogram aware normalization) ║
 ║ • envelopes.h/c                  (parametric and quantized ADSR) ║
 ║ • fft.h/c                         (FFT capabilities)             ║
+║ • complex_numbers.h               (2D vector complex arithmetic; add, sub, mul, div) ║
 ║ • synthesizer.h/c                 (signal generation core)       ║
 ║ • pidgeon_solver.h/c           (probabilistic pigeonhole solver) ║
 ║ • auxin_diffusion.h/c             (simulated plant exploration)  ║
@@ -156,6 +157,7 @@ outline of the main pieces, their pure mathematical roots and practical roles.
 | `execution_graph.h`       | Scheduler theory               | Executes dependent tasks in an ordered graph. |
 | `envelopes.h`             | Signal processing              | Parametric and quantized ADSR or custom envelope modeling. |
 | `fft.h`                   | Harmonic analysis              | Lightweight FFT implementation for spectral transforms. |
+| `complex_numbers.h`       | Complex analysis               | Vector-style complex numbers supporting add/sub/mul/div and polar conversion via Euler's formula. |
 | `cross_process_api.h`     | Operating Systems              | Cross-process messaging and synchronization primitives. |
 | `synthesizer.h`           | Signal processing              | Core oscillator for simple waveform generation. |
 | `pidgeon_solver.h`        | Probability theory             | Estimates collision likelihood when mapping many items into few buckets. |
