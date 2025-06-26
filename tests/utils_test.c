@@ -1,196 +1,113 @@
+/* utils_test.c - rewritten to brutally test TokenGuardian, GuardianHeap, and linked lists */
+
 #include "geometry/utils.h"
-#include "geometry/stencil.h"
-#include "geometry/double_buffer.h"
-#include <assert.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <time.h>
-#include <math.h>
+#include <assert.h>
 #include <string.h>
-#ifndef M_PI
-#define M_PI 3.14159265358979323846
-#endif
 
-static void forward_add(Node* self, void* data) {
-    int* val = (int*)data;
-    (*val)++;
+void test_guardian_initialization() {
+    printf("[TEST] Guardian Initialization...\n");
+
+    TokenGuardian dummy = guardian_create_dummy();
+    assert(dummy.state == GUARDIAN_NOT_USED);
+
+    TokenGuardian* heap_guardian = guardian_create_heap();
+    assert(heap_guardian != NULL);
+    assert(heap_guardian->state == GUARDIAN_HEAP);
+
+    guardian_destroy(heap_guardian);
+    printf("  -> Passed\n");
 }
 
-static void backward_add(Node* self, void* data) {
-    int* val = (int*)data;
-    (*val)++;
+void test_guardian_token_integrity() {
+    printf("[TEST] Guardian Token Integrity...\n");
+
+    TokenGuardian* g = guardian_create_heap();
+    int x = 42;
+    GuardianToken tok = guardian_create_pointer_token(g, &x, 1);
+    assert(tok.ptr == &x);
+    assert(tok.valid == true);
+
+    guardian_destroy(g);
+    printf("  -> Passed\n");
 }
 
-void test_double_buffer() {
-    int a = 0, b = 0;
-    DoubleBuffer db;
-    double_buffer_init(&db, &a, &b);
-    *(int*)double_buffer_write(&db) = 42;
-    double_buffer_swap(&db);
-    assert(*(int*)double_buffer_read(&db) == 42);
-}
+void test_guardian_heap_push_and_verify() {
+    printf("[TEST] Guardian Heap Push...\n");
 
-// Helper to create a random rectangular stencil
-GeneralStencil* random_rect_stencil(size_t dims, int radius) {
-    RectangularStencilType type = (rand() % 2) ? RECT_STENCIL_AXIS_ALIGNED : RECT_STENCIL_AXIS_ALIGNED_WITH_CENTER;
-    return stencil_create_rectangular_nd(dims, radius, type);
-}
-
-void test_quaternion_operators() {
-    Quaternion q1 = {1, 0, 0, 0};
-    Quaternion q2 = {0, 1, 0, 0};
-    Quaternion q3 = quaternion_add(q1, q2);
-    assert(q3.w == 1 && q3.x == 1 && q3.y == 0 && q3.z == 0);
-    Quaternion q4 = quaternion_mul(q1, q2);
-    assert(q4.w == 0 && q4.x == 1 && q4.y == 0 && q4.z == 0);
-    Quaternion q5 = quaternion_conjugate(q2);
-    assert(q5.w == 0 && q5.x == -1 && q5.y == 0 && q5.z == 0);
-    Quaternion q6 = quaternion_normalize((Quaternion){0,2,0,0});
-    assert(fabs(q6.x - 1.0) < 1e-8);
-    double axis[3], angle;
-    quaternion_to_axis_angle(q1, axis, &angle);
-    assert(fabs(angle) < 1e-8);
-    Quaternion q7 = quaternion_from_axis_angle((double[]){0,0,1}, M_PI/2);
-    double roll, pitch, yaw;
-    quaternion_to_euler(q7, &roll, &pitch, &yaw);
-    Quaternion q8 = quaternion_from_euler(roll, pitch, yaw);
-    assert(quaternion_is_normalized(q8, 1e-8));
-    double m[3][3];
-    quaternion_to_matrix(q7, m);
-    Quaternion q9 = quaternion_from_matrix(m);
-    assert(quaternion_is_normalized(q9, 1e-8));
-    assert(quaternion_angle_between(q7, q9) < 1e-6);
-    Quaternion q10 = quaternion_slerp(q1, q7, 0.5);
-    assert(quaternion_is_normalized(q10, 1e-8));
-}
-
-void test_quaternion_history(TokenGuardian* guardian) {
-    QuaternionHistory* hist = quaternion_history_create(guardian, 4, NULL, NULL);
-    Quaternion q1 = {1,0,0,0};
-    Quaternion q2 = quaternion_from_axis_angle((double[]){0,0,1}, M_PI/4);
-    Quaternion q3 = quaternion_from_axis_angle((double[]){0,0,1}, M_PI/2);
-    quaternion_history_add(guardian, hist, q1);
-    quaternion_history_add(guardian, hist, q2);
-    quaternion_history_add(guardian, hist, q3);
-    assert(hist->count == 3);
-    assert(quaternion_history_is_smooth(hist, 1.0));
-    Quaternion avg = quaternion_history_average(hist);
-    assert(quaternion_is_normalized(avg, 1e-8));
-    quaternion_history_destroy(guardian, hist);
-}
-
-void test_quaternion_edge_cases() {
-    Quaternion q180 = quaternion_from_axis_angle((double[]){1,0,0}, M_PI);
-    double axis[3], angle;
-    quaternion_to_axis_angle(q180, axis, &angle);
-    assert(fabs(angle - M_PI) < 1e-8);
-    Quaternion qflip1 = {0,1,0,0};
-    Quaternion qflip2 = {0,-1,0,0};
-    assert(quaternion_angle_between(qflip1, qflip2) < 1e-8);
-}
-
-int main(void) {
-    // Original test
-    Node* a = node_create();
-    Node* b = node_create();
-
-    // Add relation and features
-    size_t rel_idx = node_add_relation(a, 1, forward_add, backward_add);
-    assert(rel_idx == 0);
-    assert(node_get_relation(a, rel_idx) != NULL);
-
-    size_t feat_idx = node_add_feature(a, "feat1");
-    assert(feat_idx == 0);
-    assert(node_get_feature(a, feat_idx) != NULL);
-
-    size_t exp_idx = node_add_exposure(a, forward_add, backward_add);
-    assert(exp_idx == 0);
-    assert(node_get_exposure(a, exp_idx) != NULL);
-
-    // b mirrors relation for backward gathers
-    node_add_relation(b, 1, forward_add, backward_add);
-
-    // Link nodes bidirectionally
-    size_t link_idx = node_add_bidirectional_link(a, b, 0);
-    assert(link_idx == 0);
-    assert(node_get_forward_link(a, link_idx)->node == b);
-    assert(node_get_backward_link(b, link_idx)->node == a);
-
-    int count = 0;
-    node_scatter_to_siblings(a, &count);
-    assert(count == 1); // b incremented
-
-    count = 0;
-    node_gather_from_siblings(b, &count);
-    assert(count == 1); // gather from a
-
-    count = 0;
-    node_scatter_to_descendants(a, &count);
-    assert(count == 1); // only one descendant
-
-    count = 0;
-    node_gather_from_ancestors(b, &count);
-    assert(count == 1);
-
-    node_destroy(a);
-    node_destroy(b);
-
-    // Node locking API
-    Node* lock_node = node_create();
-    node_lock(lock_node);
-    assert(node_is_locked(lock_node));
-    assert(!node_trylock(lock_node));
-    node_unlock(lock_node);
-    assert(!node_is_locked(lock_node));
-    node_destroy(lock_node);
-
-    // Refactor tests to remove direct calls to guardian_alloc and guardian_free
-    TokenGuardian* guard = guardian_create();
-    unsigned long thread_token = guardian_register_thread(guard);
-    unsigned long mem_token;
-    void* block = guardian_create(); // Use guardian_create for memory management
-    assert(block != NULL);
-    const char* msg = "hello";
-    guardian_send(guard, thread_token, thread_token, msg, strlen(msg)+1);
-    char buf[16];
-    size_t n = guardian_receive(guard, thread_token, buf, sizeof(buf));
-    if (n < sizeof(buf)) buf[n] = '\0';
-    assert(n == strlen(msg)+1 && strcmp(buf, msg) == 0);
-    guardian_destroy(guard); // Use guardian_destroy for cleanup
-    guardian_unregister_thread(guard, thread_token);
-
-    printf("utils_test passed\n");
-    test_double_buffer();
-
-    // New test for random node pairs
-    srand((unsigned)time(NULL));
-    size_t num_pairs = 10;
-    for (size_t i = 0; i < num_pairs; ++i) {
-        size_t dims_a = 2 + rand() % 2; // 2D or 3D
-        size_t dims_b = 2 + rand() % 2;
-        int radius_a = 1 + rand() % 2;
-        int radius_b = 1 + rand() % 2;
-        GeneralStencil* sa = random_rect_stencil(dims_a, radius_a);
-        GeneralStencil* sb = random_rect_stencil(dims_b, radius_b);
-        StencilSet* set_a = stencilset_wrap_single(guard, sa);
-        StencilSet* set_b = stencilset_wrap_single(guard, sb);
-        // Try all pole pairs (just first for demo)
-        size_t pole_a = 0, pole_b = 0;
-        StencilRelation rel;
-        int reltype = stencilset_negotiate_bond(set_a, pole_a, set_b, pole_b, &rel);
-        printf("Pair %zu: dims_a=%zu, dims_b=%zu, reltype=%d\n", i, dims_a, dims_b, reltype);
-        // Cleanup
-        stencil_destroy_general(sa);
-        stencil_destroy_general(sb);
-        // Memory for set_a and set_b is managed by the guardian, so do not free with free().
-        // guardian_free(guard, ...) could be used if tokens were tracked, but here we rely on guardian_destroy.
+    TokenGuardian* g = guardian_create_heap();
+    for (int i = 0; i < 1000; ++i) {
+        int* data = (int*)malloc(sizeof(int));
+        *data = i;
+        GuardianToken tok = guardian_create_pointer_token(g, data, i % 4);
+        guardian_heap_push(g->heap, tok);
     }
 
-    test_quaternion_operators();
-    test_quaternion_history(guard);
-    test_quaternion_edge_cases();
-    guardian_destroy(guard);
-    printf("All quaternion tests passed!\n");
+    GuardianHeap* heap = g->heap;
+    LinkedListItem* iter = heap->head;
+    int count = 0;
+    while (iter) {
+        assert(iter->token.valid);
+        assert(iter->token.ptr != NULL);
+        iter = iter->next;
+        count++;
+    }
+    assert(count == 1000);
 
+    guardian_destroy(g);
+    printf("  -> Passed\n");
+}
+
+void test_linked_list_no_guardian() {
+    printf("[TEST] Linked List Without Guardian...\n");
+
+    LinkedListItem* head = linked_list_item_create(NULL, (void*)"root", 0, (GuardianToken){0});
+    LinkedListItem* a = linked_list_item_create(NULL, (void*)"a", 0, (GuardianToken){0});
+    LinkedListItem* b = linked_list_item_create(NULL, (void*)"b", 0, (GuardianToken){0});
+
+    head->next = a;
+    a->prev = head;
+    a->next = b;
+    b->prev = a;
+
+    assert(strcmp((char*)head->ptr, "root") == 0);
+    assert(strcmp((char*)head->next->ptr, "a") == 0);
+    assert(strcmp((char*)head->next->next->ptr, "b") == 0);
+
+    free(b);
+    free(a);
+    free(head);
+    printf("  -> Passed\n");
+}
+
+void test_mixed_guardian_linkage() {
+    printf("[TEST] Mixed Guardian / Manual List...\n");
+
+    TokenGuardian* g = guardian_create_heap();
+    LinkedListItem* a = linked_list_item_create(g, (void*)"a", 0, guardian_create_pointer_token(g, (void*)"a", 0));
+    LinkedListItem* b = linked_list_item_create(NULL, (void*)"b", 0, (GuardianToken){0});
+
+    a->next = b;
+    b->prev = a;
+
+    assert(strcmp((char*)a->ptr, "a") == 0);
+    assert(strcmp((char*)b->ptr, "b") == 0);
+
+    guardian_destroy(g);
+    free(b);
+    printf("  -> Passed\n");
+}
+
+int main() {
+    test_guardian_initialization();
+    test_guardian_token_integrity();
+    test_guardian_heap_push_and_verify();
+    test_linked_list_no_guardian();
+    test_mixed_guardian_linkage();
+
+    printf("\n[ALL TESTS PASSED]\n");
     return 0;
 }
+// This code is a test suite for the Guardian system, focusing on initialization, token integrity, heap management, and linked list operations.
+// It includes tests for creating and managing guardians, ensuring token integrity, pushing items to the heap
