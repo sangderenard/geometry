@@ -50,10 +50,13 @@ typedef enum {
 	NODE_FEATURE_TYPE_MEMORY_TOKEN = 39, // Memory token feature type
 	NODE_FEATURE_TYPE_TOKEN_LOCK = 40, // Token lock feature type
 	NODE_FEATURE_TYPE_MEMORY_MAP = 41, // Memory map feature type
-	NODE_FEATURE_TYPE_MESSAGE = 42, // Guardian message feature type
-	NODE_FEATURE_TYPE_CUSTOM = 43, // Custom feature type for user-defined features
-
+        NODE_FEATURE_TYPE_MESSAGE = 42, // Guardian message feature type
+        NODE_FEATURE_TYPE_CUSTOM = 43, // Custom feature type for user-defined features
+        NODE_FEATURE_TYPE_COUNT
 } NodeFeatureType;
+
+/* Alias for compatibility with the operation suite API */
+typedef NodeFeatureType OperationSuiteType;
 
 
 /* Generic function-pointer typedefs for container operations */
