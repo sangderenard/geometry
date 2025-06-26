@@ -52,6 +52,14 @@ typedef enum {
 	NODE_FEATURE_TYPE_MEMORY_MAP = 41, // Memory map feature type
         NODE_FEATURE_TYPE_MESSAGE = 42, // Guardian message feature type
         NODE_FEATURE_TYPE_CUSTOM = 43, // Custom feature type for user-defined features
+        NODE_FEATURE_TYPE_COMPLEX = 44, // Complex number (float precision)
+        NODE_FEATURE_TYPE_COMPLEX_DOUBLE = 45, // Complex number (double precision)
+        NODE_FEATURE_TYPE_VECTOR_COMPLEX = 46, // Vector of complex numbers (float)
+        NODE_FEATURE_TYPE_VECTOR_COMPLEX_DOUBLE = 47, // Vector of complex numbers (double)
+        NODE_FEATURE_TYPE_TENSOR_COMPLEX = 48, // Tensor of complex numbers (float)
+        NODE_FEATURE_TYPE_TENSOR_COMPLEX_DOUBLE = 49, // Tensor of complex numbers (double)
+        NODE_FEATURE_TYPE_TENSOR_VECTOR_COMPLEX = 50, // Tensor of vectors of complex numbers (float)
+        NODE_FEATURE_TYPE_TENSOR_VECTOR_COMPLEX_DOUBLE = 51, // Tensor of vectors of complex numbers (double)
         NODE_FEATURE_TYPE_COUNT
 } NodeFeatureType;
 
@@ -100,6 +108,98 @@ typedef void*   (*OpHistogramFn)(void* container, size_t bins);
 typedef void*   (*OpQuantileHistogramFn)(void* container, size_t quantiles);
 typedef void*   (*OpRankOrderNormalizeFn)(void* container);
 
+/* --- Graph Math Operations --- */
+typedef enum {
+    GRAPH_OP_REGION_DOMAIN = 0,
+    GRAPH_OP_REGION_SUBDOMAIN,
+    GRAPH_OP_REGION_SLICE,
+    GRAPH_OP_REGION_KERNEL
+} GraphOpRegion;
+
+typedef void* (*graph_add_fn)(void* a, void* b, GraphOpRegion region);
+typedef void* (*graph_subtract_fn)(void* a, void* b, GraphOpRegion region);
+typedef void* (*graph_multiply_fn)(void* a, void* b, GraphOpRegion region);
+typedef void* (*graph_divide_fn)(void* a, void* b, GraphOpRegion region);
+typedef void* (*graph_negate_fn)(void* a, GraphOpRegion region);
+
+typedef void* (*graph_transpose_fn)(void* a, GraphOpRegion region);
+typedef void* (*graph_matmul_fn)(void* a, void* b, GraphOpRegion region);
+typedef void* (*graph_inverse_fn)(void* a, GraphOpRegion region);
+typedef void* (*graph_determinant_fn)(void* a, GraphOpRegion region);
+
+typedef void* (*graph_matrix_pad_fn)(void* a, size_t top, size_t bottom,
+                                     size_t left, size_t right,
+                                     GraphOpRegion region);
+typedef void* (*graph_make_symmetric_fn)(void* a, GraphOpRegion region);
+
+typedef void* (*graph_union_fn)(void* a, void* b, GraphOpRegion region);
+typedef void* (*graph_intersection_fn)(void* a, void* b, GraphOpRegion region);
+typedef void* (*graph_difference_fn)(void* a, void* b, GraphOpRegion region);
+typedef int   (*graph_subset_fn)(void* a, void* b, GraphOpRegion region);
+
+typedef void  (*graph_make_contiguous_fn)(void* container);
+typedef void  (*graph_sync_fn)(void* container);
+typedef void* (*graph_factorize_fn)(void* a, GraphOpRegion region);
+typedef void* (*graph_gcf_fn)(void* a, void* b, GraphOpRegion region);
+typedef void* (*graph_lcm_fn)(void* a, void* b, GraphOpRegion region);
+
+typedef enum {
+    DIFFUSION_MODEL_AUXIN = 0,
+    DIFFUSION_MODEL_SLIME_MOLD,
+    DIFFUSION_MODEL_DEPTH_PRESSURE,
+    DIFFUSION_MODEL_BREADTH_PRESSURE
+} DiffusionModel;
+
+typedef enum {
+    DIFFUSION_SOURCE_SINGLE = 0,
+    DIFFUSION_SOURCE_UBIQUITOUS,
+    DIFFUSION_SOURCE_MAP,
+    DIFFUSION_SOURCE_DAG,
+    DIFFUSION_SOURCE_BOUNDARY_Y
+} DiffusionSourceMode;
+
+typedef enum {
+    DIFFUSION_SINK_SINGLE = 0,
+    DIFFUSION_SINK_UBIQUITOUS,
+    DIFFUSION_SINK_MAP,
+    DIFFUSION_SINK_DAG,
+    DIFFUSION_SINK_BOUNDARY_Y
+} DiffusionSinkMode;
+
+typedef void* (*graph_diffuse_fn)(
+    void* graph,
+    DiffusionModel model,
+    DiffusionSourceMode source,
+    DiffusionSinkMode sink,
+    double rate,
+    int iterations,
+    GraphOpRegion region
+);
+
+typedef struct {
+    graph_add_fn         add;
+    graph_subtract_fn    subtract;
+    graph_multiply_fn    multiply;
+    graph_divide_fn      divide;
+    graph_negate_fn      negate;
+    graph_transpose_fn   transpose;
+    graph_matmul_fn      matmul;
+    graph_inverse_fn     inverse;
+    graph_determinant_fn determinant;
+    graph_matrix_pad_fn  pad;
+    graph_make_symmetric_fn make_symmetric;
+    graph_union_fn       set_union;
+    graph_intersection_fn set_intersection;
+    graph_difference_fn  set_difference;
+    graph_subset_fn      is_subset;
+    graph_make_contiguous_fn make_contiguous;
+    graph_sync_fn         sync;
+    graph_factorize_fn    factorize;
+    graph_gcf_fn          gcf;
+    graph_lcm_fn          lcm;
+    graph_diffuse_fn     diffuse;
+} GraphMathOps;
+
 /* Suite of operations for a specific data-type container */
 typedef struct {
     OpTranslatePtrFn translate_ptr;
@@ -146,6 +246,9 @@ typedef struct {
     OpHistogramFn           histogram;
     OpQuantileHistogramFn   quantile_histogram;
     OpRankOrderNormalizeFn  rank_order_normalize;
+
+    /* Extended mathematical operations */
+    GraphMathOps math_ops;
 } OperationSuite;
 
 
