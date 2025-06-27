@@ -40,14 +40,22 @@ void* compose_structured_block(const StructLayout* layout, int instance_id, void
     const size_t block_total_size = header_size + struct_size + payload_size + tail_bytes;
     const size_t aligned_size = (block_total_size + 63) & ~((size_t)63);
 
-    void* raw_block = aligned_alloc(64, aligned_size);
+    /*
+     * All assembly backend allocations must use the 64-byte aligned
+     * allocation pathway.  mg_alloc is routed through simd_aligned_alloc,
+     * which guarantees this alignment.
+     */
+    void* raw_block = mg_alloc(aligned_size);
     if (!raw_block) return NULL;
 
     MemSpanHeader* header = (MemSpanHeader*)raw_block;
     if (default_header) {
         *header = *default_header;
     } else {
-        memset(header, 0, sizeof(MemSpanHeader));
+        /*
+         * We avoid zeroing memory automatically.  Only explicitly
+         * set fields that require initialization.
+         */
         header->flags = MEM_BLOCK_FLAG_DYNAMIC;
     }
 
