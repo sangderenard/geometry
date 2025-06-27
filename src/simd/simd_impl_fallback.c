@@ -1,5 +1,5 @@
-#include "simd_impl_common.h"
-#include "simd_dispatch.h"
+#include "simd/simd_impl_common.h"
+#include "simd/simd_dispatch.h"
 
 void simd_add_u8_fallback(simd_u8* dst, const simd_u8* src, size_t count) {
     for (size_t i = 0; i < count; ++i) {

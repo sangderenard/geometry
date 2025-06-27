@@ -256,7 +256,7 @@ typedef struct {
 
 /* Suite of operations for a specific data-type container */
 typedef struct {
-    OpTranslatePtrFn translate_ptr;
+    void *         translate_ptr;
 
     OpCreateFn     create;
     OpDestroyFn    destroy;

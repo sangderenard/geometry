@@ -171,11 +171,11 @@ TokenGuardian * find_token_authority(TokenGuardian *g) {
 }//	GuardianParallelList thread_tokens_locks_buffers_threads; // the manager database for threads
 
 TokenGuardian guardian_initialize(TokenGuardian* parent, size_t num_threads) {
-    TokenGuardian g;
-    GuardianObjectSet self = ___guardian_initialize_obj_set(&g);
+    TokenGuardian * g = guardian_global_cache_create(NODE_FEATURE_IDX_GUARDIAN);
+    GuardianObjectSet* self = ___guardian_initialize_obj_set(&g);
     if (!parent) {
 		GuardianToken pointer_token = { 1, sizeof(TokenGuardian) }; // Default token for the guardian
-        self.guardian_pointer_token = pointer_token; // Default token for the guardian
+        self->guardian_pointer_token = pointer_token; // Default token for the guardian
         g.main_lock = ___guardian_create_token_lock(&g, self.guardian_pointer_token);
 		g.token_host = &g; // Self-referential token host
 	}
@@ -289,7 +289,7 @@ boolean guardian_create_dummy() {
 
     dummy_guardian.heap = NULL;
     dummy_guardian.data = NULL;
-    dummy_guardian.stack_memory_map = (GuardianMap){0};
+    dummy_guardian.stack_memory_map = &(GuardianMap){0};
 
     dummy_guardian.self.guardian_pointer_token.token = GUARDIAN_NOT_USED;
     dummy_guardian.next_token.token = GUARDIAN_NOT_USED;
@@ -479,15 +479,31 @@ GuardianObjectSet ___guardian_create_node_object_set_internal_(TokenGuardian* g,
 	GuardianToken authorized_tracked_token = ___guardian_register_in_pool_internal_(g, __guardian_ask_for_block_internal_(g, &obj_set.guardian_pointer_token, count));
 }
     
-GuardianObjectSet ___guardian_initialize_obj_set( TokenGuardian* g){
+GuardianObjectSet * ___guardian_initialize_obj_set( TokenGuardian* g){
     if (!g) {
-        g = ___guardian_create_internal_();
-        if (!g) return (GuardianObjectSet){0};
-	}
-	GuardianObjectSet obj_set;
+	    GuardianObjectSet obj_set = guardian_create_object_in_free_queue();	}
+    }
+    else {
+        GuardianObjectSet obj_set = guardian_create_object_in_heap_queue(g);
+        
+    }
+    if (!obj_set.guardian_pointer_token.token) {
+            // Handle error: unable to create object set
+            return (GuardianObjectSet){0};
+    }
     obj_set.guardian_pointer_token.token = 0; // Initialize with a dummy token
+    if (g) {
+        obj_set.guardian = g;
+    }
+    else {
+        g = guardian_create_dummy(); // Create a new guardian if none is provided
+        if (!g) {
+            // Handle error: unable to create guardian
+            return (GuardianObjectSet){0};
+        }
+    }
     obj_set.guardian = g;
-    obj_set.guardian_lock_token.token = guardian_create_lock_token(g);
+    obj_set.guardian_lock_token = guardian_create_lock_token(g);
     return obj_set;
 }
 
