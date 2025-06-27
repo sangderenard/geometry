@@ -8,176 +8,197 @@
 extern "C" {
 #endif
 
-#ifdef _MSC_VER
-#pragma pack(push,1)
-#endif
-typedef struct DiffBlockHeader {
-    uint32_t magic;
-    uint8_t  version;
-    uint16_t type_id;
-    uint8_t  flags;
-    uint32_t payload_bytes;
-    uint32_t pointer_index_offset;
-    uint32_t metadata_offset;
-    uint16_t stride;
-    uint64_t block_id;
-} 
-#if defined(__GNUC__) || defined(__clang__)
-__attribute__((packed))
-#endif
-DiffBlockHeader;
-#ifdef _MSC_VER
-#pragma pack(pop)
-#endif
-
 // Memory block history size for tracking last N resizes
 #define MEMORY_BLOCK_HISTORY 8
 
 typedef enum {
     MEM_BLOCK_FLAG_UNINITIALIZED          = 0x00,
-    MEM_BLOCK_FLAG_DYNAMIC       = 0x01,
-    MEM_BLOCK_FLAG_FIXED    = 0x02,
-    MEM_BLOCK_FLAG_ENCODED     = 0x04,
-    MEM_BLOCK_FLAG_MANAGED    = 0x08,
+    MEM_BLOCK_FLAG_DYNAMIC                = 0x01,
+    MEM_BLOCK_FLAG_FIXED                  = 0x02,
+    MEM_BLOCK_FLAG_ENCODED                = 0x04,
+    MEM_BLOCK_FLAG_MANAGED                = 0x08,
 } MemBlockFlags;
 
 typedef enum {
-    MEM_BLOCK_HISTORY_TYPE_ROLLING = 0, // Rolling memory block
-    MEM_BLOCK_HISTORY_TYPE_UNIQUE_ROLLING = 1, // Unique rolling memory block
-    MEM_BLOCK_HISTORY_TYPE_ORDERS_OF_AVERAGES = 2, // elements of the window update every n^mth step
-    MEM_BLOCK_HISTORY_TYPE_OUTLIERS = 3, // Outlier detection memory block
+    MEM_BLOCK_HISTORY_TYPE_ROLLING = 0,
+    MEM_BLOCK_HISTORY_TYPE_UNIQUE_ROLLING = 1,
+    MEM_BLOCK_HISTORY_TYPE_ORDERS_OF_AVERAGES = 2,
+    MEM_BLOCK_HISTORY_TYPE_OUTLIERS = 3,
 } MemBlockHistoryType;
 
 typedef enum {
-    // --- Classical deterministic encodings ---
-
-    BIT_ENCODING_SCHEME_BINARY = 0,  
-    // Standard binary encoding. Fastest hardware support.
-    // Use case: raw performance, integer math, type-safe boundaries.
-    // SIMD: Supports vectorized loads, masks, gathers natively.
-
-    BIT_ENCODING_SCHEME_GREY_CODE = 1,  
-    // Each successive value differs in only one bit.
-    // Use case: Minimizes bit transitions — ideal for gradient-compatible encodings.
-    // SIMD: Differentiation-friendly, good for minimizing mutation distances in training loops.
-
-    BIT_ENCODING_SCHEME_HUFFMAN = 2,  
-    // Entropy-based compression based on frequency.
-    // Use case: Reduces bit usage at cost of decoding speed.
-    // SIMD: SIMD lookup tables possible, but requires decoding tree traversal.
-
+    BIT_ENCODING_SCHEME_BINARY = 0,
+    BIT_ENCODING_SCHEME_GREY_CODE = 1,
+    BIT_ENCODING_SCHEME_HUFFMAN = 2,
     BIT_ENCODING_SCHEME_ELIAS_GAMMA = 3,
-    // Unary-prefixed binary encoding for positive integers.
-    // Use case: Extremely compact for small integers.
-    // SIMD: Inefficient for parallel decode due to variable length.
-
     BIT_ENCODING_SCHEME_FIBONACCI = 4,
-    // Uses Fibonacci numbers as base encoding units.
-    // Use case: Compact, self-terminating, useful for sequences with known statistical decline.
-    // SIMD: Difficult to decode in parallel due to carry dependencies.
-
-    // --- Signed & Differential-optimized schemes ---
-
-    BIT_ENCODING_SCHEME_ZIGZAG = 5,  
-    // Maps signed integers to unsigned integers (used in Protobuf).
-    // Use case: Works well when delta-encoding small positive and negative deltas.
-    // SIMD: Ideal for packed delta streams.
-
+    BIT_ENCODING_SCHEME_ZIGZAG = 5,
     BIT_ENCODING_SCHEME_DELTA = 6,
-    // Stores differences between successive values.
-    // Use case: Time series, memory walks, data flow encoding.
-    // SIMD: Works beautifully with prefix sum & AVX register chaining.
-
     BIT_ENCODING_SCHEME_BURROWS_WHEELER_TRANSFORM = 7,
-    // Transforms data to be more compressible.
-    // Use case: Combined with RLE or Huffman for data entropy reduction.
-    // SIMD: Memory-heavy, great for block shuffling before compression.
-
     BIT_ENCODING_SCHEME_RUN_LENGTH = 8,
-    // Replaces consecutive repeated values with value-count pairs.
-    // Use case: Sparse or repetitive memory regions.
-    // SIMD: Can be accelerated with compress/decompress intrinsics.
-
-    // --- Multi-bit symbol map encodings ---
-
     BIT_ENCODING_SCHEME_TERNARY_BALANCED = 9,
-    // Base-3 signed encoding (-1, 0, 1) with zero-centered logic.
-    // Use case: Ideal for logic simulation, ternary arithmetic, or symbolic computation.
-    // SIMD: Ternary lookup with AVX shuffle lanes.
-
     BIT_ENCODING_SCHEME_PERMUTATION = 10,
-    // Encodes relative order or ranking of items.
-    // Use case: Graph node reordering, probabilistic memory structures.
-    // SIMD: Custom gather/scatter required.
-
     BIT_ENCODING_SCHEME_BITWISE_FOURIER = 11,
-    // Represents values via their frequency-domain signature.
-    // Use case: Bit-domain convolution, rhythm-like diff analysis.
-    // SIMD: FFT + logic domain introspection.
-
-    // --- Experimental / Neuroplastic / Adaptive schemes ---
-
     BIT_ENCODING_SCHEME_NEURAL_FIELD = 12,
-    // Uses internal floating representation with differentiable parameters.
-    // Use case: Model-aware compression and data reshaping.
-    // SIMD: Requires on-the-fly learned functions or LUTs.
-
     BIT_ENCODING_SCHEME_CONTEXTUAL_BLOCK = 13,
-    // Encodes using surrounding context to pick encoding dictionary.
-    // Use case: Adaptive memory layout compression.
-    // SIMD: Requires embedded context header per block.
-
     BIT_ENCODING_SCHEME_WAVELET_PACK = 14,
-    // Encodes with low/high-frequency bit signatures (Haar or Daubechies).
-    // Use case: Noise filtering, error resilience.
-    // SIMD: Tree-based AVX execution using lanes.
-
-    // Future-protected range for custom experimentals
     BIT_ENCODING_SCHEME_CUSTOM_RESERVED = 15
-
 } BitEncodingScheme;
 
 typedef enum {
-    DIFF_TAPE_FORMAT_FLAG_NONE = 0x00, // No diff tape format
-    DIFF_TAPE_FORMAT_FLAG_UNTIMED = 0x01, // Untimed diff tape format
-    DIFF_TAPE_FORMAT_FLAG_TIMED_US = 0x02, // Timed diff tape format in microseconds
-    DIFF_TAPE_FORMAT_FLAG_TIMED_NS = 0x04, // Timed diff tape format in nanoseconds
-    DIFF_TAPE_FORMAT_FLAG_TIMED_MS = 0x08, // Timed diff tape format in milliseconds
-    DIFF_TAPE_FORMAT_FLAG_TIMED_S = 0x10, // Timed diff tape format in seconds
-    DIFF_TAPE_FORMAT_FLAG_GLOBAL_ITERATION = 0x20, // Global iteration-based diff tape format
-    DIFF_TAPE_FORMAT_FLAG_LOCAL_ITERATION = 0x40, // Local iteration
-    DIFF_TAPE_FORMAT_FLAG_FULL = 0x80, // Full diff tape format with all metadata
-    DIFF_TAPE_FORMAT_FLAG_COMPRESSED = 0x100, // Compressed diff
-    
+    DIFF_TAPE_FORMAT_FLAG_NONE = 0x00,
+    DIFF_TAPE_FORMAT_FLAG_UNTIMED = 0x01,
+    DIFF_TAPE_FORMAT_FLAG_TIMED_US = 0x02,
+    DIFF_TAPE_FORMAT_FLAG_TIMED_NS = 0x04,
+    DIFF_TAPE_FORMAT_FLAG_TIMED_MS = 0x08,
+    DIFF_TAPE_FORMAT_FLAG_TIMED_S = 0x10,
+    DIFF_TAPE_FORMAT_FLAG_GLOBAL_ITERATION = 0x20,
+    DIFF_TAPE_FORMAT_FLAG_LOCAL_ITERATION = 0x40,
+    DIFF_TAPE_FORMAT_FLAG_FULL = 0x80,
+    DIFF_TAPE_FORMAT_FLAG_COMPRESSED = 0x100,
 } DiffTapeFormat;
 
-// A header for a dynamic n*2^m *64B span
+typedef enum {
+    MEMORY_COMPARE_MODE_PAD = 0,
+    MEMORY_COMPARE_MODE_TRUNCATE = 1,
+    MEMORY_COMPARE_MODE_SCALE_UP = 2,
+    MEMORY_COMPARE_MODE_SCALE_DOWN = 3,
+} MemoryCompareMode;
+
+typedef enum {
+    MEMORY_COMPARE_FLAG_NONE = 0x00,
+    MEMORY_COMPARE_FLAG_IGNORE_PADDING = 0x01,
+    MEMORY_COMPARE_FLAG_IGNORE_ZEROES = 0x02,
+    MEMORY_COMPARE_FLAG_SCALING_ANTIALIASING = 0x04,
+    MEMORY_COMPARE_FLAG_PRESERVE_EDGES = 0x08,
+    MEMORY_COMPARE_FLAG_ALLOW_TRUNCATION = 0x10,
+    MEMORY_COMPARE_FLAG_ALLOW_PADDING = 0x20,
+    MEMORY_COMPARE_FLAG_FLATTEN_OBJECTS_TO_MEAN = 0x40,
+    MEMORY_COMPARE_FLAG_FLATTEN_OBJECTS_TO_MAX = 0x80,
+    MEMORY_COMPARE_FLAG_FLATTEN_OBJECTS_TO_MIN = 0x100,
+    MEMORY_COMPARE_FLAG_FLATTEN_OBJECTS_TO_SUM = 0x200,
+    MEMORY_COMPARE_FLAG_FLATTEN_OBJECTS_TO_HAMMING = 0x400,
+    MEMORY_COMPARE_FLAG_FLATTEN_OBJECTS_TO_JACCARD = 0x800,
+    MEMORY_COMPARE_FLAG_FLATTEN_OBJECTS_TO_COSINE = 0x1000,
+    MEMORY_COMPARE_FLAG_FLATTEN_OBJECTS_TO_EUCLIDEAN = 0x2000,
+    MEMORY_COMPARE_FLAG_FLATTEN_OBJECTS_TO_MANHATTAN = 0x4000,
+    MEMORY_COMPARE_FLAG_FLATTEN_OBJECTS_TO_CHEBYSHEV = 0x8000,
+    MEMORY_COMPARE_FLAG_FLATTEN_OBJECTS_TO_MINKOWSKI = 0x10000,
+} MemoryCompareFlags;
+
 typedef struct {
-    float n;            // initial n dimension (integer)
-    float m;            // initial m exponent (integer)
-    float growth_n;     // growth counter for n dimension
-    float growth_m;     // growth counter for m exponent
-    float decay_n;      // decay factor applied on shrink decisions
-    float decay_m;      // decay factor applied on shrink decisions
-    uint64_t timestamp_ns[MEMORY_BLOCK_HISTORY]; // timestamp of last resize in nanoseconds
-    size_t payload_bytes[MEMORY_BLOCK_HISTORY];     // actual payload size in bytes
-    void* diff_tape; // pointer to the diff tape for this span
-    DiffTapeFormat diff_tape_flags; // is this span using a diff tape?
-    BitEncodingScheme encoding_scheme; // Encoding scheme used for this span
-    MemBlockHistoryType history_type; // Type of history tracking
-    MemBlockFlags flags; // Flags for the memory block
+    void* object;
+    mutex_t mutex;
+    long long token;
+    size_t size;
+    size_t index;
+} object;
+
+typedef struct {
+    object* from;
+    object* to;
+    size_t weight;
+} BidirectEdgePointers;
+
+typedef struct {
+    object* objects;
+    BidirectEdgePointers* edges;
+    size_t object_count;
+    size_t edge_count;
+    size_t total_size;
+} SuballocationGraphData;
+
+typedef struct {
+    float n;
+    float m;
+    float growth_n;
+    float growth_m;
+    float decay_n;
+    float decay_m;
+    uint64_t timestamp_ns[MEMORY_BLOCK_HISTORY];
+    size_t payload_bytes[MEMORY_BLOCK_HISTORY];
+    void* diff_tape;
+    SuballocationGraphData* suballocation_graph_data;
+    DiffTapeFormat diff_tape_flags;
+    BitEncodingScheme encoding_scheme;
+    MemBlockHistoryType history_type;
+    MemBlockFlags flags;
 } MemSpanHeader;
 
+typedef struct {
+    const char* field_name;
+    uint8_t offset;
+    uint8_t size;
+    uint8_t role;
+    uint8_t align;
+} FieldTemplate;
+
+typedef struct {
+    const char* struct_name;
+    size_t struct_size;
+    size_t payload_size;
+    size_t extra_space;
+    const FieldTemplate* fields;
+    size_t field_count;
+} StructLayout;
+
+// -- CORE FUNCTIONS --
+
+void* compose_structured_block(const StructLayout* layout, int instance_id, void* user_payload);
 void* mg_encode_block(const void* raw_data, size_t size_bytes, uint16_t type_id, uint8_t flags);
 void* mg_decode_block(const void* encoded_block, size_t* out_payload_size);
-// Compare two encoded memory blocks and return a pointer to a newly allocated
-// float with the byte-level difference count.
 void* mg_tensor_compare(const void* block_a, const void* block_b);
-
-// Allocate a span of size (floor(init_n) * 2^floor(init_m) * 64), with growth/decay factors
 void* memops_span_alloc(float init_n, float init_m, float decay_factor);
-// Free a span previously allocated with memops_span_alloc
 void  memops_span_free(void* span_ptr);
+void* memops_span_get_data(const MemSpanHeader* header);
+struct GuardianLinkNode* memops_init_linked_nodes(size_t count);
+
+// -- GRAPH MANAGEMENT --
+
+boolean addObjectToGraph(SuballocationGraphData* graph, object* obj);
+boolean removeObjectFromGraph(SuballocationGraphData* graph, object* obj);
+boolean tokenValidate(object* obj, long long token);
+boolean initializeObject(object* obj, long long token, mutex_t* mutex, size_t size, void* data);
+SuballocationGraphData* suballocation_graph_create(void* objects, void* edges, size_t object_count, size_t edge_count);
+GuardianSimpleGraph* getSuballocationGraph(SuballocationGraphData* graph);
+SuballocationGraphData* guardianGraphToSuballocationGraph(GuardianSimpleGraph* graph);
+
+// -- EXTENDED GRAPH FUNCTIONS --
+
+object* findObjectByToken(SuballocationGraphData* graph, long long token);
+BidirectEdgePointers* findEdgeBetween(SuballocationGraphData* graph, object* from, object* to);
+boolean linkObjects(SuballocationGraphData* graph, object* from, object* to, size_t weight);
+boolean unlinkObjects(SuballocationGraphData* graph, object* from, object* to);
+void memops_subgraph_free(SuballocationGraphData* graph);
+void memops_object_clear(object* obj);
+
+// -- SPAN METADATA ACCESSORS --
+
+void memops_span_update_payload(MemSpanHeader* header, size_t new_size);
+void memops_span_record_resize(MemSpanHeader* header, size_t new_size);
+size_t memops_span_get_payload_size(const MemSpanHeader* header);
+float memops_span_growth_factor(const MemSpanHeader* header);
+float memops_span_decay_factor(const MemSpanHeader* header);
+
+// -- ENCODING DISPATCH --
+
+void* memops_encode_dispatch(const void* raw, size_t size, BitEncodingScheme scheme);
+void* memops_decode_dispatch(const void* encoded, size_t* out_size, BitEncodingScheme scheme);
+const char* bit_encoding_scheme_name(BitEncodingScheme scheme);
+size_t bit_encoding_estimate_output_size(BitEncodingScheme scheme, size_t input_bytes);
+
+// -- COMPARISON FRAMEWORK --
+
+float memops_compare_blocks(const void* a, const void* b, MemoryCompareMode mode, MemoryCompareFlags flags);
+float memops_distance_metric(const void* a, const void* b, MemoryCompareFlags metric);
+void* memops_flatten_block(const void* block, MemoryCompareFlags flatten_mode);
+
+// -- DEBUG & INTROSPECTION --
+
+void memops_print_span_info(const MemSpanHeader* header);
+void memops_print_object(const object* obj);
+void memops_debug_graph(const SuballocationGraphData* graph);
+void memops_diff_tape_clear(void* diff_tape);
 
 #ifdef __cplusplus
 }

@@ -1,16 +1,31 @@
 #include "assembly_backend/simd/memory_intrinsics.h"
 #include "assembly_backend/simd/simd_dispatch.h"
-#include <immintrin.h>
-#include <string.h>
+#include <stdlib.h>
+#if defined(_MSC_VER)
+  #include <malloc.h>
+#endif
 
 void* simd_aligned_alloc(size_t size) {
-    void* ptr = _mm_malloc(size, 64);
-    if (ptr) simd_memset_impl(ptr, 0, size);
+#if defined(_MSC_VER)
+    // Windows aligned alloc
+    return _aligned_malloc(size, 64);
+#elif defined(__APPLE__) || defined(__unix__)
+    void* ptr = NULL;
+    if (posix_memalign(&ptr, 64, size) != 0) return NULL;
     return ptr;
+#else
+    // Fallback to malloc
+    return malloc(size);
+#endif
 }
 
 void simd_aligned_free(void* ptr) {
-    if (ptr) _mm_free(ptr);
+    if (!ptr) return;
+#if defined(_MSC_VER)
+    _aligned_free(ptr);
+#else
+    free(ptr);
+#endif
 }
 
 static size_t hamming_distance(const uint8_t* a, const uint8_t* b, size_t len) {
