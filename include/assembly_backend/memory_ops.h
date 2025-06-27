@@ -170,12 +170,8 @@ typedef struct {
 
 void* mg_encode_block(const void* raw_data, size_t size_bytes, uint16_t type_id, uint8_t flags);
 void* mg_decode_block(const void* encoded_block, size_t* out_payload_size);
-void  mg_tensor_compare_64x64(const void* block_a, const void* block_b, float* out_diff_tensor);
-const DiffBlockHeader* mg_peek_header(const void* block);
+void* mg_tensor_compare(const void* block_a, const void* block_b);
 
-// SIDM-backed allocator interface
-void* mg_alloc(size_t size);
-void  mg_free(void* ptr);
 // Allocate a span of size (floor(init_n) * 2^floor(init_m) * 64), with growth/decay factors
 void* memops_span_alloc(float init_n, float init_m, float decay_factor);
 // Free a span previously allocated with memops_span_alloc

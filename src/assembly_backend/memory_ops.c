@@ -25,26 +25,21 @@ void* mg_decode_block(const void* encoded_block, size_t* out_payload_size) {
 }
 
 void* mg_alloc(size_t size) {
+    // why are we using malloc in an assembly backend?
     void* ptr = malloc(size);
     if (ptr) simd_memset_impl(ptr, 0, size);
     return ptr;
 }
 
 void mg_free(void* ptr) {
+    // why are we using free in an assembly backend?
     free(ptr);
 }
 
-void mg_tensor_compare_64x64(const void* block_a, const void* block_b, float* out_diff_tensor) {
-    if (out_diff_tensor) {
-        for (size_t i = 0; i < 64 * 64; ++i) {
-            out_diff_tensor[i] = 0.0f;
-        }
-    }
+void* mg_tensor_compare(const void* block_a, const void* block_b, float* out_diff_tensor) {
+    // use intinsics here 
 }
 
-const DiffBlockHeader* mg_peek_header(const void* block) {
-    return (const DiffBlockHeader*)block;
-}
 
 // Allocate a dynamic span: size = floor(init_n) * 2^floor(init_m) * 64 bytes
 void* memops_span_alloc(float init_n, float init_m, float decay_factor) {
@@ -56,10 +51,14 @@ void* memops_span_alloc(float init_n, float init_m, float decay_factor) {
 
     // Allocate header + data
     size_t header_size = sizeof(MemSpanHeader);
+    // we literally do not care about zeroing the memory here, as the header will be filled
+    // mg_alloc needs to be actual simd allocator
+    // then we can case block the initialization
     uint8_t* base = simd_memset_impl(mg_alloc(header_size + total), 0, header_size + total);
     if (!base) return NULL;
 
     // Fill header
+    // this is all out of date at this point
     MemSpanHeader* h = (MemSpanHeader*)base;
     h->growth_n = init_n;
     h->growth_m = init_m;
@@ -75,6 +74,7 @@ void* memops_span_alloc(float init_n, float init_m, float decay_factor) {
 
 // Free a span
 void memops_span_free(void* span_ptr) {
+    // like most things this should be simd-aware
     if (!span_ptr) return;
     // Compute base pointer
     uint8_t* base = (uint8_t*)span_ptr - sizeof(MemSpanHeader);
