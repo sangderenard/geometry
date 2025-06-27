@@ -58,7 +58,7 @@ typedef enum {
 
     BIT_ENCODING_SCHEME_GREY_CODE = 1,  
     // Each successive value differs in only one bit.
-    // Use case: Minimizes Hamming distance — ideal for gradient-compatible encodings.
+    // Use case: Minimizes bit transitions — ideal for gradient-compatible encodings.
     // SIMD: Differentiation-friendly, good for minimizing mutation distances in training loops.
 
     BIT_ENCODING_SCHEME_HUFFMAN = 2,  
@@ -170,6 +170,8 @@ typedef struct {
 
 void* mg_encode_block(const void* raw_data, size_t size_bytes, uint16_t type_id, uint8_t flags);
 void* mg_decode_block(const void* encoded_block, size_t* out_payload_size);
+// Compare two encoded memory blocks and return a pointer to a newly allocated
+// float with the byte-level difference count.
 void* mg_tensor_compare(const void* block_a, const void* block_b);
 
 // Allocate a span of size (floor(init_n) * 2^floor(init_m) * 64), with growth/decay factors

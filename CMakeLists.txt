@@ -10,16 +10,18 @@ set(C_SOURCES
     src/geometry/graph_ops_handler.c
     src/geometry/iterative_solver.c
     src/geometry/simd_ops.c
-    src/simd/simd_dispatch.c
-    src/simd/simd_impl_avx2.c
-    src/simd/simd_impl_sse2.c
-    src/simd/simd_impl_fallback.c
+    src/assembly_backend/simd/simd_dispatch.c
+    src/assembly_backend/simd/simd_impl_avx2.c
+    src/assembly_backend/simd/simd_impl_sse2.c
+    src/assembly_backend/simd/simd_impl_fallback.c
+    src/assembly_backend/simd/memory_intrinsics.c
+    src/assembly_backend/core.c
 )
 add_library(geometry ${C_SOURCES})
 
 # compile SIMD backends with explicit instruction set flags
-set_source_files_properties(src/simd/simd_impl_avx2.c PROPERTIES COMPILE_FLAGS "-mavx2")
-set_source_files_properties(src/simd/simd_impl_sse2.c PROPERTIES COMPILE_FLAGS "-msse2")
+set_source_files_properties(src/assembly_backend/simd/simd_impl_avx2.c PROPERTIES COMPILE_FLAGS "-mavx2")
+set_source_files_properties(src/assembly_backend/simd/simd_impl_sse2.c PROPERTIES COMPILE_FLAGS "-msse2")
 
 add_library(geometry_stencil
     src/geometry/stencil.c
