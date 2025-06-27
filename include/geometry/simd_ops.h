@@ -2,7 +2,7 @@
 #define GEOMETRY_SIMD_OPS_H
 
 #include <stddef.h>
-#include "simd/simd_types.h"
+#include "assembly_backend/simd/simd_types.h"
 
 #ifdef __cplusplus
 extern "C" {

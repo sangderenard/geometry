@@ -1,5 +1,5 @@
 #include "geometry/simd_ops.h"
-#include "simd/simd_dispatch.h"
+#include "assembly_backend/simd/simd_dispatch.h"
 
 static int initialized = 0;
 static void ensure_init(void) {

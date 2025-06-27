@@ -1,7 +1,7 @@
 #if defined(__SSE2__)
 #include <emmintrin.h>
-#include "simd_impl_common.h"
-#include "simd_dispatch.h"
+#include "assembly_backend/simd/simd_impl_common.h"
+#include "assembly_backend/simd/simd_dispatch.h"
 
 void simd_add_u8_sse2(simd_u8* dst, const simd_u8* src, size_t count) {
     size_t i = 0;
