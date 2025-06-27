@@ -1,28 +1,40 @@
 #include "assembly_backend/memory_ops.h"
+#include <stddef.h>
+#include <stdint.h>
 
-/*
- * Stub implementations for the differentiable memory graph backend.
- * These are placeholders and do not perform real memory management yet.
- */
+// Temporary definition for debugging
+typedef struct DiffBlockHeader {
+    uint32_t magic;
+    uint8_t  version;
+    uint16_t type_id;
+    uint8_t  flags;
+    uint32_t payload_bytes;
+    uint32_t pointer_index_offset;
+    uint32_t metadata_offset;
+    uint16_t stride;
+    uint64_t block_id;
+} DiffBlockHeader; // Removed `__attribute__((packed))`
+
+// Helper function to determine system endianness
+static int is_little_endian() {
+    uint16_t test = 0x1;
+    return *((uint8_t*)&test) == 0x1;
+}
 
 void* mg_encode_block(const void* raw_data, size_t size_bytes, uint16_t type_id, uint8_t flags) {
-    (void)raw_data;
-    (void)size_bytes;
-    (void)type_id;
-    (void)flags;
-    // Memory allocation is disallowed in this repository. Returning NULL for now.
-    return NULL;
+    // Directly call the assembly routine
+    extern void* mg_encode_block(const void* raw_data, size_t size_bytes, uint16_t type_id, uint8_t flags);
+    return mg_encode_block(raw_data, size_bytes, type_id, flags);
 }
 
 void* mg_decode_block(const void* encoded_block, size_t* out_payload_size) {
-    if (out_payload_size) *out_payload_size = 0;
-    // No actual decoding performed.
-    return (void*)encoded_block;
+    // Directly call the assembly routine
+    extern void* mg_decode_block(const void* encoded_block, size_t* out_payload_size);
+    return mg_decode_block(encoded_block, out_payload_size);
 }
 
 void mg_tensor_compare_64x64(const void* block_a, const void* block_b, float* out_diff_tensor) {
-    (void)block_a;
-    (void)block_b;
+    // Placeholder for tensor comparison logic
     if (out_diff_tensor) {
         for (size_t i = 0; i < 64 * 64; ++i) {
             out_diff_tensor[i] = 0.0f;

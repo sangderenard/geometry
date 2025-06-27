@@ -44,10 +44,10 @@ typedef unsigned char boolean;
 #include "geometry/graph_ops.h"
 #include "geometry/graph_ops_handler.h"
 
+#include "geometry/guardian_link_cache.h" // Include the new primitive layer
+
 /* Forward declarations for types used before definition */
-typedef struct GuardianLinkedList GuardianLinkedList;
 typedef struct GuardianList GuardianList;
-typedef struct GuardianParallelList GuardianParallelList;
 typedef struct GuardianDict GuardianDict;
 typedef struct GuardianSet GuardianSet;
 typedef struct GuardianMap GuardianMap;
@@ -56,6 +56,7 @@ typedef struct GuardianGeneology GuardianGeneology;
 typedef struct GuardianHeap GuardianHeap;
 typedef struct GuardianThread GuardianThread;
 typedef struct TokenGuardian TokenGuardian;
+typedef struct GuardianParallelList GuardianParallelList;
 
 // --- Emergence structure for node-level adaptation ---
 typedef struct Emergence Emergence;
@@ -157,7 +158,7 @@ typedef struct GuardianMailbox {
 	size_t thread_id; // ID of the thread owning this mailbox
 	GuardianMessage * message_head; // Pointer to the head of the message queue
 	GuardianMessage * message_tail; // Pointer to the tail of the message queue
-	GuardianLinkedList message_list; // Linked list of messages in the mailbox
+	GuardianList message_list; // List of messages in the mailbox
 	size_t max_size; // Maximum size of the mailbox
 	size_t message_count; // Count of messages in the mailbox
 	enum MailboxDisposalPolicy {
@@ -281,39 +282,32 @@ typedef struct GuardianPointerToken {
 	size_t size, span; // Size of the unit / size of the memory block (in units)
 } GuardianPointerToken;
 
-typedef struct GuardianLinkedList {
-    GuardianToken left;
-	GuardianToken right;
-	size_t max_size; // Maximum size of the linked list
-	boolean is_contiguous; // Flag for contiguous allocation
-	size_t list_size; // Current size of the linked list
-    GuardianPointerToken* data; // Pointer to the data array
-	TokenGuardian* guardian; // Pointer to the guardian managing this linked list
-	NodeFeatureType feature_type; // Feature type for the linked list
-} GuardianLinkedList;
-
-// --- GuardianDict structure ---
-typedef struct GuardianDict {
-    size_t total_allocation_size; // Total allocated size
-    size_t used_allocation_size;  // Number of used entries
-    GuardianLinkedList keys;
-    GuardianLinkedList values;                // Internal representation of the set (e.g., hash table or tree)
-} GuardianDict;
-
-// --- GuardianList structure ---
+// A GuardianList is a container for a doubly-linked list of payloads.
+// It is built upon the primitive GuardianLinkNode from the global cache.
 typedef struct GuardianList {
-    GuardianLinkedList entry_set;              // Dictionary for non-contiguous entries (indices to pointer tokens)
+    GuardianLinkNode* head;
+    GuardianLinkNode* tail;
+    size_t count;
+    TokenGuardian* guardian; // The guardian that owns this list
+    NodeFeatureType feature_type; // The type of payload in the list
 } GuardianList;
 
 typedef struct GuardianParallelList {
     GuardianList lists;
 } GuardianParallelList;
 
+// --- GuardianDict structure ---
+// A dictionary mapping keys to values. Implemented with two parallel lists.
+typedef struct GuardianDict {
+    GuardianList keys;
+    GuardianList values;
+} GuardianDict;
+
 // --- GuardianSet structure ---
+// An unordered collection of unique items. Implemented as a single list.
+// Hashing/uniqueness must be handled by the functions operating on it.
 typedef struct GuardianSet {
-    size_t total_allocation_size; // Total allocated size
-    size_t used_allocation_size;  // Number of used entries
-    GuardianLinkedList entry_set;  // Internal representation of the set (e.g., hash table or tree)
+    GuardianList entries;
 } GuardianSet;
 
 typedef struct GuardianMap {
@@ -406,6 +400,30 @@ typedef enum {
     OBJECT_TYPE_STENCIL,
     OBJECT_TYPE_PARAMETRIC_DOMAIN
 } ObjectType;
+
+// Add missing function prototypes
+TokenGuardian* find_token_authority(TokenGuardian* g);
+TokenGuardian guardian_initialize(TokenGuardian* parent, size_t num_threads);
+GuardianToken guardian_create_pointer_token(TokenGuardian* g, void* ptr, NodeFeatureType type);
+GuardianToken guardian_create_lock_token(TokenGuardian* g);
+boolean guardian_lock_with_timeout(TokenGuardian* g, GuardianToken guardian_lock_token, int duration, boolean reentrant);
+int guardian_try_lock(TokenGuardian* g, unsigned long lock_token);
+void guardian_lock(TokenGuardian* g, unsigned long lock_token);
+void guardian_unlock(TokenGuardian* g, unsigned long lock_token);
+int guardian_is_locked(TokenGuardian* g, unsigned long lock_token);
+void* guardian_dereference_object(TokenGuardian* g, unsigned long pointer_token);
+
+TokenGuardian* ___guardian_create_internal_(void);
+void ___guardian_destroy_internal_(TokenGuardian* g);
+unsigned long ___guardian_register_thread_internal_(TokenGuardian* g);
+void ___guardian_unregister_thread_internal_(TokenGuardian* g, unsigned long token);
+void* ___guardian_alloc_internal_(TokenGuardian* g, size_t size, unsigned long* token_out);
+void ___guardian_free_internal_(TokenGuardian* g, unsigned long token);
+void ___guardian_send_internal_(TokenGuardian* g, unsigned long from, unsigned long to, const void* data, size_t size);
+size_t ___guardian_receive_internal_(TokenGuardian* g, unsigned long to, void* buffer, size_t max_size);
+unsigned long ___guardian_create_object_internal_(TokenGuardian* g, int type, int count, GuardianPointerToken referrent, GuardianList params);
+void ___guardian_destroy_object_internal_(TokenGuardian* g, unsigned long token);
+unsigned long ___guardian_parse_nested_object_internal_(TokenGuardian* g, const char* request);
 
 #ifdef __cplusplus
 }

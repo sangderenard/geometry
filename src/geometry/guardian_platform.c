@@ -39,24 +39,6 @@ void guardian_mutex_destroy(mutex_t* mutex) {
 #endif
 }
 
-/// Lock a mutex.
-void guardian_mutex_lock(mutex_t* mutex) {
-#ifdef _WIN32
-    WaitForSingleObject(mutex, INFINITE);
-#else
-    pthread_mutex_lock(mutex);
-#endif
-}
-
-/// Unlock a mutex.
-void guardian_mutex_unlock(mutex_t* mutex) {
-#ifdef _WIN32
-    ReleaseMutex(mutex);
-#else
-    pthread_mutex_unlock(mutex);
-#endif
-}
-
 // Console Color and Cursor Functions
 
 void guardian_console_set_color(int color_code) {

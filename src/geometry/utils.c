@@ -1,12 +1,8 @@
 #include "geometry/utils.h"
+#include "geometry/guardian_platform.h"
 #include <stdlib.h>
 #include <string.h>
 #include <stdint.h>
-#ifdef _WIN32
-#include <windows.h>
-#else
-#include <pthread.h>
-#endif
 
 
 // === Node Data Structures ===
@@ -248,7 +244,28 @@ GuardianToken guardian_create_pointer_token(TokenGuardian* g, void* ptr, NodeFea
     }
     return token;
 }
-GuardianToken guardian_create_lock_token
+
+GuardianToken guardian_create_lock_token(TokenGuardian* g) {
+    if (!g) return (GuardianToken){0};
+    GuardianToken lock_token = ___guardian_get_new_token(g, sizeof(mutex_t));
+    if (lock_token.token == 0) return (GuardianToken){0};
+    mutex_t* mutex = malloc(sizeof(mutex_t));
+    if (!mutex) return (GuardianToken){0};
+    guardian_mutex_init(mutex);
+    // Register the mutex in the guardian's lock pool
+    boolean success = ___guardian_register_out_of_heap_pointer_token(g, lock_token, mutex);
+    if (!success) {
+        free(mutex);
+        return (GuardianToken){0};
+    }
+    return lock_token;
+}
+
+GuardianToken guardian_create_dummy() {
+    GuardianToken dummy_token = {0};
+    return dummy_token;
+}
+
 boolean guardian_create_dummy() {
     static TokenGuardian dummy_guardian;
 
@@ -492,7 +509,7 @@ GuardianObjectSet ___guardian_initialize_obj_set( TokenGuardian* g){
 // === TokenGuardian structure ===
 // Full structure:
 // typedef struct TokenGuardian {
-//     node_mutex_t mutex;
+//     mutex_t mutex;
 //     size_t num_threads, cap_threads;
 //     size_t min_allocation, max_allocation;
 // } TokenGuardian;
@@ -611,48 +628,17 @@ GuardianObjectSet ___guardian_initialize_obj_set( TokenGuardian* g){
 
 
 
-static void ___guardian_mutex_init_internal_(node_mutex_t* m) {
-#ifdef _WIN32
-    InitializeCriticalSection(m);
-#else
-    pthread_mutex_init(m, NULL);
-#endif
-}
-
-static void ___guardian_mutex_destroy_internal_(node_mutex_t* m) {
-#ifdef _WIN32
-    DeleteCriticalSection(m);
-#else
-    pthread_mutex_destroy(m);
-#endif
-}
-
-static void ___guardian_mutex_lock_internal_(node_mutex_t* m) {
-#ifdef _WIN32
-    EnterCriticalSection(m);
-#else
-    pthread_mutex_lock(m);
-#endif
-}
-
-static void ___guardian_mutex_unlock_internal_(node_mutex_t* m) {
-#ifdef _WIN32
-    LeaveCriticalSection(m);
-#else
-    pthread_mutex_unlock(m);
-#endif
-}
 
 TokenGuardian* ___guardian_create_internal_(void) {
     TokenGuardian* g = calloc(1, sizeof(TokenGuardian));
     if (!g) return NULL;
-    ___guardian_mutex_init_internal_(&g->mutex);
+    g->mutex = guardian_mutex_init();
     return g;
 }
 
 void ___guardian_destroy_internal_(TokenGuardian* g) {
     if (!g) return;
-    ___guardian_mutex_lock_internal_(&g->mutex);
+    guardian_mutex_lock(&g->mutex);
     free(g->threads);
     for (size_t i = 0; i < g->num_memories; ++i) free(g->memories[i].block);
     free(g->memories);
@@ -675,7 +661,7 @@ static unsigned long ___guardian_next_id_internal_(TokenGuardian* g, unsigned lo
 
 unsigned long ___guardian_register_thread_internal_(TokenGuardian* g) {
     if (!g) return 0;
-    ___guardian_mutex_lock_internal_(&g->mutex);
+    guardian_mutex_lock(&g->mutex);
     if (g->num_threads == g->cap_threads) {
         size_t new_cap = g->cap_threads ? g->cap_threads * 2 : 4;
         g->threads = realloc(g->threads, new_cap * sizeof(GuardianThreadToken));
@@ -694,7 +680,7 @@ unsigned long ___guardian_register_thread_internal_(TokenGuardian* g) {
 
 void ___guardian_unregister_thread_internal_(TokenGuardian* g, unsigned long token) {
     if (!g || token == 0) return;
-    ___guardian_mutex_lock_internal_(&g->mutex);
+    guardian_mutex_lock(&g->mutex);
     for (size_t i = 0; i < g->num_threads; ++i) {
         if (g->threads[i].id == token) {
             g->threads[i] = g->threads[g->num_threads - 1];
@@ -710,7 +696,7 @@ static void* ___guardian_alloc_internal_(TokenGuardian* g, size_t size, unsigned
     static unsigned long mem_counter = 0;
     void* block = calloc(1, size);
     if (!block) return NULL;
-    ___guardian_mutex_lock_internal_(&g->mutex);
+    guardian_mutex_lock(&g->mutex);
     if (g->num_memories == g->cap_memories) {
         size_t new_cap = g->cap_memories ? g->cap_memories * 2 : 4;
         g->memories = realloc(g->memories, new_cap * sizeof(GuardianMemoryToken));
@@ -725,7 +711,7 @@ static void* ___guardian_alloc_internal_(TokenGuardian* g, size_t size, unsigned
 
 static void ___guardian_free_internal_(TokenGuardian* g, unsigned long token) {
     if (!g || token == 0) return;
-    ___guardian_mutex_lock_internal_(&g->mutex);
+    guardian_mutex_lock(&g->mutex);
     for (size_t i = 0; i < g->num_memories; ++i) {
         if (g->memories[i].id == token) {
             free(g->memories[i].block);
@@ -979,116 +965,40 @@ GuardianToken guardian_create_token(
 
 // Try to acquire a lock using a token
 int guardian_try_lock(TokenGuardian* g, unsigned long lock_token) {
-    if (!g || lock_token == 0) return 0;
-    node_mutex_t* mutex = (node_mutex_t*)___guardian_deref_neighbor_internal_(g, lock_token, 0, NULL);
-    if (!mutex) return 0;
-#ifdef _WIN32
-    return TryEnterCriticalSection(mutex);
-#else
-    return pthread_mutex_trylock(mutex) == 0;
-#endif
+    if (!g || lock_token == 0) return 0; // 0 for failure
+    mutex_t* mutex = (mutex_t*)___guardian_deref_neighbor_internal_(g, lock_token, 0, NULL);
+    if (!mutex) return 0; // 0 for failure
+    return guardian_mutex_trylock(mutex); // 1 for success, 0 for failure
 }
 
 // Acquire a lock using a token
 void guardian_lock(TokenGuardian* g, unsigned long lock_token) {
     if (!g || lock_token == 0) return;
-    node_mutex_t* mutex = (node_mutex_t*)___guardian_deref_neighbor_internal_(g, lock_token, 0, NULL);
+    mutex_t* mutex = (mutex_t*)___guardian_deref_neighbor_internal_(g, lock_token, 0, NULL);
     if (!mutex) return;
-#ifdef _WIN32
-    EnterCriticalSection(mutex);
-#else
-    pthread_mutex_lock(mutex);
-#endif
+    guardian_mutex_lock(mutex);
 }
 
 // Release a lock using a token
 void guardian_unlock(TokenGuardian* g, unsigned long lock_token) {
     if (!g || lock_token == 0) return;
-    node_mutex_t* mutex = (node_mutex_t*)___guardian_deref_neighbor_internal_(g, lock_token, 0, NULL);
+    mutex_t* mutex = (mutex_t*)___guardian_deref_neighbor_internal_(g, lock_token, 0, NULL);
     if (!mutex) return;
-#ifdef _WIN32
-    LeaveCriticalSection(mutex);
-#else
-    pthread_mutex_unlock(mutex);
-#endif
+    guardian_mutex_unlock(mutex);
 }
 
 // Check if a lock is held using a token
 int guardian_is_locked(TokenGuardian* g, unsigned long lock_token) {
     if (!g || lock_token == 0) return 0;
-    node_mutex_t* mutex = (node_mutex_t*)___guardian_deref_neighbor_internal_(g, lock_token, 0, NULL);
-    if (!mutex) return 0;
-#ifdef _WIN32
-    return mutex->LockCount > 0;
-#else
-    return pthread_mutex_trylock(mutex) != 0;
-#endif
-}
-
-// === Object Dereferencer ===
-
-// Exchange a token for the object a pointer is pointing to
-void* guardian_dereference_object(TokenGuardian* g, unsigned long pointer_token) {
-    if (!g || pointer_token == 0) return NULL;
-    void* ptr = NULL;
-    void* block = ___guardian_deref_neighbor_internal_(g, pointer_token, 0, NULL);
-    if (block) memcpy(&ptr, block, sizeof(void*));
-    return ptr;
-}
-// === Friendly Functions for Guardian ===
-
-
-// Generate a token for a lock without exposing the mutex
-
-
-// === Friendly Lock Functions ===
-
-// Try to acquire a lock using a token
-int guardian_try_lock(TokenGuardian* g, unsigned long lock_token) {
-    if (!g || lock_token == 0) return 0;
-    node_mutex_t* mutex = (node_mutex_t*)___guardian_deref_neighbor_internal_(g, lock_token, 0, NULL);
-    if (!mutex) return 0;
-#ifdef _WIN32
-    return TryEnterCriticalSection(mutex);
-#else
-    return pthread_mutex_trylock(mutex) == 0;
-#endif
-}
-
-// Acquire a lock using a token
-void guardian_lock(TokenGuardian* g, unsigned long lock_token) {
-    if (!g || lock_token == 0) return;
-    node_mutex_t* mutex = (node_mutex_t*)___guardian_deref_neighbor_internal_(g, lock_token, 0, NULL);
-    if (!mutex) return;
-#ifdef _WIN32
-    EnterCriticalSection(mutex);
-#else
-    pthread_mutex_lock(mutex);
-#endif
-}
-
-// Release a lock using a token
-void guardian_unlock(TokenGuardian* g, unsigned long lock_token) {
-    if (!g || lock_token == 0) return;
-    node_mutex_t* mutex = (node_mutex_t*)___guardian_deref_neighbor_internal_(g, lock_token, 0, NULL);
-    if (!mutex) return;
-#ifdef _WIN32
-    LeaveCriticalSection(mutex);
-#else
-    pthread_mutex_unlock(mutex);
-#endif
-}
-
-// Check if a lock is held using a token
-int guardian_is_locked(TokenGuardian* g, unsigned long lock_token) {
-    if (!g || lock_token == 0) return 0;
-    node_mutex_t* mutex = (node_mutex_t*)___guardian_deref_neighbor_internal_(g, lock_token, 0, NULL);
-    if (!mutex) return 0;
-#ifdef _WIN32
-    return mutex->LockCount > 0;
-#else
-    return pthread_mutex_trylock(mutex) != 0;
-#endif
+    mutex_t* mutex = (mutex_t*)___guardian_deref_neighbor_internal_(g, lock_token, 0, NULL);
+    if (!mutex) return 0; // Cannot determine, assume not locked
+    // Attempt to lock and immediately unlock.
+    if (guardian_mutex_trylock(mutex)) {
+        // We got the lock, so it wasn't locked.
+        guardian_mutex_unlock(mutex);
+        return 0; // Not locked
+    }
+    return 1; // Was locked
 }
 
 // === Object Dereferencer ===

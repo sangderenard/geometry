@@ -64,6 +64,16 @@ static inline void guardian_mutex_unlock(mutex_t* mtx) {
 #endif
 }
 
+static inline int guardian_mutex_trylock(mutex_t* mtx) {
+#if GUARDIAN_PLATFORM_WINDOWS
+  // Returns 1 on success, 0 on failure (timeout).
+  return WaitForSingleObject(*mtx, 0) == WAIT_OBJECT_0;
+#else
+  // Returns 1 on success, 0 on failure.
+  return pthread_mutex_trylock(*mtx) == 0;
+#endif
+}
+
 // Full mutex lifecycle functions declared
 mutex_t* guardian_mutex_init();
 void guardian_mutex_destroy(mutex_t* mtx);
