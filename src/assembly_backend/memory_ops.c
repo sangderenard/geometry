@@ -2,18 +2,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
-// Temporary definition for debugging
-typedef struct DiffBlockHeader {
-    uint32_t magic;
-    uint8_t  version;
-    uint16_t type_id;
-    uint8_t  flags;
-    uint32_t payload_bytes;
-    uint32_t pointer_index_offset;
-    uint32_t metadata_offset;
-    uint16_t stride;
-    uint64_t block_id;
-} DiffBlockHeader; // Removed `__attribute__((packed))`
+/* DiffBlockHeader is defined in memory_ops.h */
 
 // Helper function to determine system endianness
 static int is_little_endian() {

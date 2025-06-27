@@ -5,10 +5,21 @@ set(CMAKE_CXX_STANDARD 17)
 
 include_directories(include third_party/eigen)
 
-file(GLOB_RECURSE CPP_SOURCES "src/*.cpp")
-list(FILTER CPP_SOURCES EXCLUDE REGEX "dec_toolkit_header.cpp$")
-file(GLOB_RECURSE C_SOURCES "src/*.c")
-add_library(geometry ${CPP_SOURCES} ${C_SOURCES})
+set(C_SOURCES
+    src/geometry/utils.c
+    src/geometry/graph_ops_handler.c
+    src/geometry/iterative_solver.c
+    src/geometry/simd_ops.c
+    src/simd/simd_dispatch.c
+    src/simd/simd_impl_avx2.c
+    src/simd/simd_impl_sse2.c
+    src/simd/simd_impl_fallback.c
+)
+add_library(geometry ${C_SOURCES})
+
+# compile SIMD backends with explicit instruction set flags
+set_source_files_properties(src/simd/simd_impl_avx2.c PROPERTIES COMPILE_FLAGS "-mavx2")
+set_source_files_properties(src/simd/simd_impl_sse2.c PROPERTIES COMPILE_FLAGS "-msse2")
 
 add_library(geometry_stencil
     src/geometry/stencil.c
