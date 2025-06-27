@@ -8,6 +8,28 @@
 extern "C" {
 #endif
 
+/* ------------------------------------------------------------------------- */
+/*  Core Intrinsics Quick Reference                                          */
+/* ------------------------------------------------------------------------- */
+/*  memory_ops relies on vectorized helpers provided by core.  After calling  */
+/*  simd_init_dispatch(), the following function pointers and utilities are   */
+/*  available:                                                                */
+/*                                                                           */
+/*    simd_add_u8_impl(dst, src, count)    - saturating add uint8 vectors     */
+/*    simd_add_u16_impl(dst, src, count)   - saturating add uint16 vectors    */
+/*    simd_add_s8_impl(dst, src, count)    - saturating add int8 vectors      */
+/*    simd_add_f32_impl(dst, src, count)   - add float32 vectors              */
+/*    simd_add_f64_impl(dst, src, count)   - add float64 vectors              */
+/*    simd_and_u8_impl(dst, src, count)    - bitwise AND uint8 vectors        */
+/*    simd_or_u8_impl(dst, src, count)     - bitwise OR uint8 vectors         */
+/*    simd_xor_u8_impl(dst, src, count)    - bitwise XOR uint8 vectors        */
+/*    simd_memcpy_impl(dst, src, bytes)    - accelerated memcpy              */
+/*    simd_memset_impl(dst, val, bytes)    - accelerated memset              */
+/*    simd_byte_diff_count(a, b, len)      - Hamming distance of byte arrays  */
+/*    simd_aligned_alloc(size)             - 64-byte aligned allocation       */
+/*    simd_aligned_free(ptr)               - release aligned memory           */
+/* ------------------------------------------------------------------------- */
+
 // Memory block history size for tracking last N resizes
 #define MEMORY_BLOCK_HISTORY 8
 

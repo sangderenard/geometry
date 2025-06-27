@@ -93,6 +93,11 @@ void memops_span_free(void* span_ptr) {
     mg_free(base);
 }
 
+void* memops_span_get_data(const MemSpanHeader* header) {
+    if (!header) return NULL;
+    return (void*)((const uint8_t*)header + sizeof(MemSpanHeader));
+}
+
 struct GuardianLinkNode* memops_init_linked_nodes(size_t count) {
     if (count == 0) return NULL;
     size_t total_size = sizeof(GuardianLinkNode) * count;
@@ -122,11 +127,33 @@ boolean unlinkObjects(SuballocationGraphData* graph, object* from, object* to) {
 void memops_subgraph_free(SuballocationGraphData* graph) {}
 void memops_object_clear(object* obj) {}
 
-void memops_span_update_payload(MemSpanHeader* header, size_t new_size) {}
-void memops_span_record_resize(MemSpanHeader* header, size_t new_size) {}
-size_t memops_span_get_payload_size(const MemSpanHeader* header) { return 0; }
-float memops_span_growth_factor(const MemSpanHeader* header) { return 0.0f; }
-float memops_span_decay_factor(const MemSpanHeader* header) { return 0.0f; }
+void memops_span_update_payload(MemSpanHeader* header, size_t new_size) {
+    if (!header) return;
+    header->payload_bytes[0] = new_size;
+}
+
+void memops_span_record_resize(MemSpanHeader* header, size_t new_size) {
+    if (!header) return;
+    for (int i = MEMORY_BLOCK_HISTORY - 1; i > 0; --i) {
+        header->payload_bytes[i] = header->payload_bytes[i - 1];
+        header->timestamp_ns[i] = header->timestamp_ns[i - 1];
+    }
+    header->payload_bytes[0] = new_size;
+    header->timestamp_ns[0] = guardian_now().nanoseconds;
+}
+
+size_t memops_span_get_payload_size(const MemSpanHeader* header) {
+    if (!header) return 0;
+    return header->payload_bytes[0];
+}
+
+float memops_span_growth_factor(const MemSpanHeader* header) {
+    return header ? header->growth_n : 0.0f;
+}
+
+float memops_span_decay_factor(const MemSpanHeader* header) {
+    return header ? header->decay_n : 0.0f;
+}
 
 void* memops_encode_dispatch(const void* raw, size_t size, BitEncodingScheme scheme) { return NULL; }
 void* memops_decode_dispatch(const void* encoded, size_t* out_size, BitEncodingScheme scheme) { return NULL; }
