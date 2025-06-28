@@ -61,3 +61,7 @@ add_test(NAME iterative_solver_test COMMAND iterative_solver_test)
 add_executable(complex_numbers_test tests/complex_numbers_test.c)
 target_link_libraries(complex_numbers_test geometry)
 add_test(NAME complex_numbers_test COMMAND complex_numbers_test)
+
+add_executable(linked_list_creation_test tests/linked_list_creation_test.c)
+target_link_libraries(linked_list_creation_test geometry)
+add_test(NAME linked_list_creation_test COMMAND linked_list_creation_test)

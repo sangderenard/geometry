@@ -5,14 +5,6 @@
 extern "C" {
 #endif
 
-#ifndef __BOOLEAN_DEFINED
-#define __BOOLEAN_DEFINED
-
-typedef unsigned char boolean;
-#define true 1
-#define false 0
-
-#endif
 
 #include <limits.h>
 #define MAX_U8  ((uint8_t)0xFF)
@@ -294,12 +286,7 @@ typedef struct GuardianLinkedList {
 	NodeFeatureType feature_type; // Type of payload in this linked list
 	TokenGuardian* guardian; // The guardian that owns this linked list
 } GuardianLinkedList;	
-typedef struct GuardianLinkNode {
-	GuardianPointerToken* pointer_token; // Pointer to the payload
-	GuardianLinkNode* next; // Pointer to the next node in the list
-	GuardianLinkNode* prev; // Pointer to the previous node in the list
-	NodeFeatureType feature_type; // Type of payload in this node
-} GuardianLinkNode;
+/* GuardianLinkNode definition provided by guardian_link_cache.h */
 GuardianToken * guardian_create_pointer_token(TokenGuardian* g, void* ptr, NodeFeatureType type);
 // A GuardianList is a container for a doubly-linked list of payloads.
 // It is built upon the primitive GuardianLinkNode from the global cache.
@@ -445,6 +432,20 @@ size_t ___guardian_receive_internal_(TokenGuardian* g, unsigned long to, void* b
 unsigned long ___guardian_create_object_internal_(TokenGuardian* g, int type, int count, GuardianPointerToken referrent, GuardianList params);
 void ___guardian_destroy_object_internal_(TokenGuardian* g, unsigned long token);
 unsigned long ___guardian_parse_nested_object_internal_(TokenGuardian* g, const char* request);
+
+/* Linked list helpers */
+GuardianLinkedList* guardian_linked_list_set_chain(GuardianLinkedList* list,
+                                                   GuardianLinkNode** chain,
+                                                   int type,
+                                                   int chain_length);
+GuardianLinkedList* guardian_create_linked_list(TokenGuardian* g,
+                                                int initialized_length,
+                                                int type,
+                                                void** data);
+GuardianList* guardian_create_list(TokenGuardian* g,
+                                   int initialized_length,
+                                   int type,
+                                   void** data);
 
 #ifdef __cplusplus
 }

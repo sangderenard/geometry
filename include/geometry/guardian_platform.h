@@ -20,6 +20,17 @@
 #include <string.h>
 #include <time.h>
 
+#ifndef __BOOLEAN_DEFINED
+#define __BOOLEAN_DEFINED
+
+typedef unsigned char boolean;
+#define true 1
+#define false 0
+
+typedef unsigned char byte;
+
+#endif
+
 #if GUARDIAN_PLATFORM_WINDOWS
   #include <windows.h>
   #include <io.h>
