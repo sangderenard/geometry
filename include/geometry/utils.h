@@ -127,9 +127,9 @@ typedef struct GuardianToken {
 
 
 typedef struct GuardianObjectSet {
-	GuardianToken guardian_pointer_token; // Unique token for the object
+	GuardianToken* guardian_pointer_token; // Unique token for the object
 	TokenGuardian* guardian; // Pointer to the guardian managing this object
-	GuardianToken guardian_lock_token; // Lock token for thread safety
+	GuardianToken* guardian_lock_token; // Lock token for thread safety
 } GuardianObjectSet;
 
 typedef struct GuardianStack {
@@ -285,20 +285,28 @@ typedef struct GuardianPointerToken {
     GuardianToken * token; // Unique token for the pointer
 	size_t size, span; // Size of the unit / size of the memory block (in units)
 } GuardianPointerToken;
-
+typedef struct GuardianLinkedList {
+	GuardianPointerToken * left; // Pointer to the left end of the linked list
+	GuardianPointerToken * right; // Pointer to the right end of the linked list
+	size_t size; // Size of the linked list
+	size_t max_size; // Maximum size of the linked list
+	NodeFeatureType feature_type; // Type of payload in this linked list
+	TokenGuardian* guardian; // The guardian that owns this linked list
+} GuardianLinkedList;	
 typedef struct GuardianLinkNode {
 	GuardianPointerToken* pointer_token; // Pointer to the payload
 	GuardianLinkNode* next; // Pointer to the next node in the list
 	GuardianLinkNode* prev; // Pointer to the previous node in the list
 	NodeFeatureType feature_type; // Type of payload in this node
 } GuardianLinkNode;
-
+GuardianToken * guardian_create_pointer_token(TokenGuardian* g, void* ptr, NodeFeatureType type);
 // A GuardianList is a container for a doubly-linked list of payloads.
 // It is built upon the primitive GuardianLinkNode from the global cache.
 typedef struct GuardianList {
-    GuardianLinkNode* head;
-    GuardianLinkNode* tail;
     size_t count;
+	GuardianLinkedList* index_to_pointer; // Index to pointer mapping for fast access
+	GuardianLinkedList* pointer_to_index; // Pointer to index mapping for fast access
+	GuardianMap* index_to_pointer_map; // Map of indices to pointers for fast access
     TokenGuardian* guardian; // The guardian that owns this list
     NodeFeatureType feature_type; // The type of payload in the list
 } GuardianList;

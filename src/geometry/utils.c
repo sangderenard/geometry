@@ -174,38 +174,38 @@ TokenGuardian guardian_initialize(TokenGuardian* parent, size_t num_threads) {
     TokenGuardian * g = guardian_global_cache_create(NODE_FEATURE_IDX_GUARDIAN);
     GuardianObjectSet* self = ___guardian_initialize_obj_set(&g);
     if (!parent) {
-		GuardianToken pointer_token = { 1, sizeof(TokenGuardian) }; // Default token for the guardian
+		GuardianToken* pointer_token = instantiate_on_input_cache(NODE_FEATURE_IDX_POINTER_TOKEN);
         self->guardian_pointer_token = pointer_token; // Default token for the guardian
-        g.main_lock = ___guardian_create_token_lock(&g, self.guardian_pointer_token);
-		g.token_host = &g; // Self-referential token host
+        g->main_lock = ___guardian_create_token_lock(&g, self->guardian_pointer_token);
+		g->token_host = g; // Self-referential token host
 	}
 	else {
-        g.token_host = parent;
-		self.guardian_pointer_token = ___guardian_create_pointer_token(&parent, &g);
-		g.main_lock = ___guardian_create_token_lock(&parent, self.guardian_pointer_token);
+        g->token_host = parent;
+		self->guardian_pointer_token = guardian_create_pointer_token(parent, g, NODE_FEATURE_IDX_GUARDIAN );
+		g->main_lock = guardian_create_token_lock(parent, self->guardian_pointer_token);
 	}
     
 
 
-    g.allocation_growth_factor = 1.5; // Default growth factor
-    g.concurrent_threads = num_threads > 0 ? num_threads : 4; // Default to 4 threads if not specified
-    g.max_allocation = 1024 * 1024 * 1024; // Default max allocation size (1 GB)
-    g.min_allocation = 1024; // Default min allocation size (1 KB)
+    g->allocation_growth_factor = 1.5; // Default growth factor
+    g->concurrent_threads = num_threads > 0 ? num_threads : 4; // Default to 4 threads if not specified
+    g->max_allocation = 1024 * 1024 * 1024; // Default max allocation size (1 GB)
+    g->min_allocation = 1024; // Default min allocation size (1 KB)
 
-    g.data = malloc(g.min_allocation);
+    g->data = instantiate_on_input_cache(NODE_FEATURE_IDX_HEAP); // Initialize data structure
 
-    g.max_threads = g.min_allocation;
-    g.using_buffered_io = false; // Default to not using buffered I/O
-    g.auto_contiguous_allocation = true; // Default to automatic contiguous allocation
-    g.auto_synchronization = true; // Default to automatic synchronization
-    g.max_stack_count = g.max_threads;
-    g.max_stack_size = 1024 * 1024; // Default stack size (1 MB)
-    g.default_feature_type = NODE_FEATURE_TYPE_FLOAT; // Default feature type for nodes
-    g.default_stencil_set = ___guardian_create_stencil_set_internal_(&g, ___guardian_create_list_internal_(&g, ___guardian_create_stencil_internal(&g, RECT_STENCIL_DEFAULT)));
-    g.default_node_orientation = NODE_ORIENTATION_DOMAIN_PARALLEL; // Default node orientation
-    g.default_parametric_domain = parametric_domain_create(3); // Default 3D parametric domain
-    g.default_geneology = ___guardian_create_geneology_internal_(&g, g.default_stencil_set, g.default_node_orientation, g.default_parametric_domain);
-    g.next_token = { 2 };
+    g->max_threads = g->min_allocation;
+    g->using_buffered_io = false; // Default to not using buffered I/O
+    g->auto_contiguous_allocation = true; // Default to automatic contiguous allocation
+    g->auto_synchronization = true; // Default to automatic synchronization
+    g->max_stack_count = g->max_threads;
+    g->max_stack_size = 1024 * 1024; // Default stack size (1 MB)
+    g->default_feature_type = NODE_FEATURE_TYPE_FLOAT; // Default feature type for nodes
+    g->default_stencil_set = guardian_create_stencil_set(g, guardian_create_list(g, guardian_create_stencil(g, RECT_STENCIL_DEFAULT), NODE_FEATURE_IDX_STENCIL, NULL)); // Default stencil set for nodes
+    g->default_node_orientation = NODE_ORIENTATION_DOMAIN_PARALLEL; // Default node orientation
+    g->default_parametric_domain = parametric_domain_create(3); // Default 3D parametric domain
+    g->default_geneology = guardian_create_geneology(g, g->default_stencil_set, g->default_node_orientation, g.default_parametric_domain);
+    g->next_token = id_dispenser();
 }
 
 GuardianToken ___guardian_get_new_token(TokenGuardian* g, int size){
@@ -221,20 +221,19 @@ GuardianToken ___guardian_get_new_token(TokenGuardian* g, int size){
     return token;
 }
 // Generate a token for a pointer without exposing the pointer itself
-GuardianToken guardian_create_pointer_token(TokenGuardian* g, void* ptr, NodeFeatureType type) {
+GuardianToken * guardian_create_pointer_token(TokenGuardian* g, void* ptr, NodeFeatureType type) {
     if (!g) {
         TokenGuardian dummy = {GUARDIAN_NOT_USED};
         g = &dummy; // Use a dummy guardian if none is provided
     }
-    GuardianToken dummy_data = guardian_create_dummy();;
+    GuardianToken * dummy_data = guardian_create_dummy();;
     if (!ptr) return dummy_data; // Return an empty token if the pointer is null
-    GuardianToken token;
-    token.token = ___guardian_register_in_pool_internal_(g, ___guardian_get_unregistered_stack(g, type));
+    GuardianToken * token;
+    token->token = ___guardian_register_in_pool_internal_(g, ___guardian_get_unregistered_stack(g, type));
 
-    if (token.token == 0) {
+    if (token->token == 0) {
         // Handle error: unable to create pointer token
-        GuardianToken pointer_token;
-        pointer_token = ___guardian_get_new_token(g, guardian_sizeof(type));
+        GuardianToken * pointer_token = guardian_get_new_token(g, guardian_sizeof(type));
         boolean success = ___guardian_register_out_of_heap_pointer_token(g, pointer_token, ptr);
         if (!success) {
             // Handle error: unable to register pointer token
@@ -261,81 +260,64 @@ GuardianToken guardian_create_lock_token(TokenGuardian* g) {
     return lock_token;
 }
 
-GuardianToken guardian_create_dummy() {
-    GuardianToken dummy_token = {0};
-    return dummy_token;
-}
+GuardianToken * guardian_create_dummy() {
+    TokenGuardian * dummy_guardian = instantiate_on_input_cache(NODE_FEATURE_IDX_GUARDIAN)    ;
 
-boolean guardian_create_dummy() {
-    static TokenGuardian dummy_guardian;
+    dummy_guardian->is_locked = false;
+    dummy_guardian->is_initialized = false;
+    dummy_guardian->is_contiguous = false;
+    dummy_guardian->is_synchronized = false;
 
-    dummy_guardian.is_locked = false;
-    dummy_guardian.is_initialized = false;
-    dummy_guardian.is_contiguous = false;
-    dummy_guardian.is_synchronized = false;
+    dummy_guardian->self = ___guardian_initialize_obj_set(&dummy_guardian);
+    dummy_guardian->main_lock = ___guardian_create_token_lock(&dummy_guardian, dummy_guardian.self.guardian_pointer_token);
 
-    dummy_guardian.self = ___guardian_initialize_obj_set(&dummy_guardian);
-    dummy_guardian.main_lock = ___guardian_create_token_lock(&dummy_guardian, dummy_guardian.self.guardian_pointer_token);
+    dummy_guardian->max_threads = 1;
+    dummy_guardian->min_allocation = 0;
+    dummy_guardian->max_allocation = 0;
+    dummy_guardian->allocation_growth_factor = 1.0;
+    dummy_guardian->concurrent_threads = 1;
 
-    dummy_guardian.max_threads = 1;
-    dummy_guardian.min_allocation = 0;
-    dummy_guardian.max_allocation = 0;
-    dummy_guardian.allocation_growth_factor = 1.0;
-    dummy_guardian.concurrent_threads = 1;
+    dummy_guardian->using_buffered_io = false;
+    dummy_guardian->auto_contiguous_allocation = false;
+    dummy_guardian->auto_synchronization = false;
 
-    dummy_guardian.using_buffered_io = false;
-    dummy_guardian.auto_contiguous_allocation = false;
-    dummy_guardian.auto_synchronization = false;
+    dummy_guardian->heap = NULL;
+    dummy_guardian->data = NULL;
+    dummy_guardian->stack_memory_map = &(GuardianMap){0};
 
-    dummy_guardian.heap = NULL;
-    dummy_guardian.data = NULL;
-    dummy_guardian.stack_memory_map = &(GuardianMap){0};
-
-    dummy_guardian.self.guardian_pointer_token.token = GUARDIAN_NOT_USED;
-    dummy_guardian.next_token.token = GUARDIAN_NOT_USED;
+    dummy_guardian->self->guardian_pointer_token->token = GUARDIAN_NOT_USED;
+    dummy_guardian->next_token->token = GUARDIAN_NOT_USED;
 
     return true; // Success
 }
 
-const MAX_LINK_LIST_SIZE = 1000000; // Maximum size for linked lists
-GuardianLinkedList ___guardian_create_linked_list_internal_(TokenGuardian* g, int initialized_length, int type, void** data) {
-    GuardianLinkedList list;
-    
-    void* left_location = (void *)((data ? data : malloc(guardian_sizeof(type) * initialized_length)));
-    if (!left_location) {
-        // Handle error: unable to allocate memory for the left pointer
-        return (GuardianLinkedList){0};
-    }
-    list.guardian = g;
-    list.feature_type = type;   
-    
-    list.left = guardian_create_pointer_token(g, left_location, type);
-    list.right = guardian_create_pointer_token(g, (char*)(data + ((initialized_length -1) * guardian_sizeof(type))), type);
-    
-
-
-    list.max_size = MAX_LINK_LIST_SIZE;
-    list.is_contiguous = false;
-    list.list_size = initialized_length;
-    if (initialized_length > 1) {
-        if(data) {
-            list.is_contiguous = true; // If data is provided, assume contiguous allocation
-        }
-        void * link = list.left;
-        for (int i = 0; i < initialized_length - 1; ++i) {}
-    }
-    
-    list.data = data;
+GuardianLinkedList * guardian_linked_list_set_chain(GuardianLinkedList * list, GuardianLinkNode ** chain, int type, int chain_length) {
+    if (!list || !chain) return NULL;
+    list->left = chain;
+    list->right = chain + (chain_length - 1) * sizeof(GuardianLinkNode*);
+    list->feature_type = type;
+    list->size = chain_length;
+    list->max_size = MAX_LINK_LIST_SIZE; // Set the maximum size for the linked
     return list;
 }
 
-GuardianList ___guardian_create_list_internal_(TokenGuardian* g, int initialized_length, int type, void** data) {
-    GuardianList list;
-    list.entry_set = ___guardian_create_linked_list_internal_(g, initialized_length, type, data);
-    if (!list.entry_set.max_size) {
-        // Handle error: unable to create linked list
-        return (GuardianList){0};
+const MAX_LINK_LIST_SIZE = 1000000; // Maximum size for linked lists
+GuardianLinkedList * guardian_create_linked_list(TokenGuardian* g, int initialized_length, int type, void** data) {
+    GuardianLinkedList * list = instantiate_on_input_cache(NODE_FEATURE_IDX_LINKED_LIST);
+    GuardianLinkNode ** node = instantiate_chain_on_input_cache(type, initialized_length);
+    list = guardian_linked_list_set_chain(list, node, type, initialized_length);
+    boolean success = guardian_linked_list_straight_write(list, data, initialized_length);
+    if (!success) {
+        // Handle error: unable to write to linked list
+        return NULL;
     }
+    return list;
+}
+
+GuardianList* guardian_create_list(TokenGuardian* g, int initialized_length, int type, void** data) {
+    GuardianList* list = instantiate_on_input_cache(NODE_FEATURE_IDX_LIST);
+    list->pointer_to_index = guardian_create_linked_list(g, initialized_length, type, data);
+    list = guardian_refresh_from_pointer_to_index(list);
     return list;
 }
 

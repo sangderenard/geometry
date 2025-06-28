@@ -139,7 +139,9 @@ void memops_span_update_payload(MemSpanHeader* header, size_t new_size) {
     if (!header) return;
     header->payload_bytes[0] = new_size;
 }
+GuardianObjectSet * instantiate_on_input_cache(NodeFeatureIndex type){
 
+}
 void memops_span_record_resize(MemSpanHeader* header, size_t new_size) {
     if (!header) return;
     for (int i = MEMORY_BLOCK_HISTORY - 1; i > 0; --i) {
