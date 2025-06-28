@@ -2,7 +2,7 @@
 #define ASSEMBLY_BACKEND_THREAD_OPS_H
 
 #include <stddef.h>
-#include "geometry/guardian_platform.h"
+#include "geometry/guardian_platform_types.h"
 
 #ifdef __cplusplus
 extern "C" {

@@ -12,7 +12,7 @@ extern "C" {
 #include <stddef.h>
 #include <stdint.h>
 #include "utils.h"    // boolean, sizing, platform
-#include "guardian_platform.h"  // threading, mutex
+#include "geometry/guardian_platform_types.h"  // threading, mutex types
 
 // ========================================
 // Error Codes

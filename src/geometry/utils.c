@@ -541,7 +541,8 @@ GuardianObjectSet * guardian_create_node_object_set(TokenGuardian* g, int count)
         // Handle error: unable to create pointer token
 		return NULL;
     }
-	GuardianToken * authorized_tracked_token = guardian_register_in_pool(g, guardian_ask_for_block(g, obj_set->guardian_pointer_token, count), count);
+    GuardianToken * authorized_tracked_token =
+        guardian_register_in_pool(g, guardian_ask_for_block(g, obj_set->guardian_pointer_token, count));
     obj_set->guardian_pointer_token = authorized_tracked_token;
     return obj_set;
     

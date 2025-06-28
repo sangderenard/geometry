@@ -4,11 +4,7 @@
 // ========================================
 // 🛠️  Platform Detection
 // ========================================
-#ifdef _WIN32
-  #define GUARDIAN_PLATFORM_WINDOWS 1
-#else
-  #define GUARDIAN_PLATFORM_POSIX 1
-#endif
+#include "geometry/guardian_platform_types.h"
 
 // ========================================
 // 🔗 Standard Includes
@@ -19,42 +15,6 @@
 #include <stdio.h>
 #include <string.h>
 #include <time.h>
-
-#ifndef __BOOLEAN_DEFINED
-#define __BOOLEAN_DEFINED
-
-typedef unsigned char boolean;
-#define true 1
-#define false 0
-
-typedef unsigned char byte;
-
-#endif
-
-#if GUARDIAN_PLATFORM_WINDOWS
-  #include <windows.h>
-  #include <io.h>
-  #include <direct.h>
-  #define PATH_SEPARATOR '\\'
-#else
-  #include <pthread.h>
-  #include <unistd.h>
-  #include <dlfcn.h>
-  #include <sys/time.h>
-  #include <sys/stat.h>
-  #define PATH_SEPARATOR '/'
-#endif
-
-// ========================================
-// 🔐 Mutex & Thread Types
-// ========================================
-#if GUARDIAN_PLATFORM_WINDOWS
-  typedef HANDLE mutex_t;
-  typedef HANDLE guardian_thread_handle_t;
-#else
-  typedef pthread_mutex_t* mutex_t;
-  typedef pthread_t guardian_thread_handle_t;
-#endif
 
 // ========================================
 // 🧵 Mutex Interface (Header-Level Inline)
@@ -92,12 +52,6 @@ void guardian_mutex_destroy(mutex_t* mtx);
 // ========================================
 // ⏱️ Time Utilities (Prototype)
 // ========================================
-typedef struct {
-    int64_t milliseconds;
-    int64_t microseconds;
-    int64_t nanoseconds;
-} guardian_time_t;
-
 guardian_time_t guardian_now();
 double guardian_seconds_since(guardian_time_t start);
 void guardian_sleep_ms(unsigned int ms);
