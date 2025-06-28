@@ -246,3 +246,15 @@ void memops_print_span_info(const MemSpanHeader* header) {}
 void memops_print_object(const object* obj) {}
 void memops_debug_graph(const SuballocationGraphData* graph) {}
 void memops_diff_tape_clear(void* diff_tape) {}
+
+// Retire an object/container by freeing its memory
+void memory_ops_retire(void* obj, NodeFeatureIndex type) {
+    // TODO: everything that needs to be done here
+    // reference checks
+    // Ensure the object is not NULL before proceeding
+    // recursive cleanup if necessary
+    // would any blocks already be useful recycled as is?
+    // such as linked lists, graphs, etc of standard types and sizes
+    if (!obj) return;
+    mg_free(obj);
+}

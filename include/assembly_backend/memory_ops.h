@@ -4,6 +4,7 @@
 #include <stdint.h>
 #include <stddef.h>
 #include "assembly_backend/thread_ops.h"
+#include "geometry/types.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -176,6 +177,7 @@ void* memops_span_alloc(float init_n, float init_m, float decay_factor);
 void  memops_span_free(void* span_ptr);
 void* memops_span_get_data(const MemSpanHeader* header);
 struct GuardianLinkNode* memops_init_linked_nodes(size_t count);
+void memory_ops_retire(void* obj, NodeFeatureIndex type);
 
 // -- GRAPH MANAGEMENT --
 

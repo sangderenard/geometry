@@ -2,8 +2,7 @@
 #include "geometry/graph_ops.h"
 #include "assembly_backend/memory_ops.h"
 #include <stdlib.h>
-
-typedef struct GuardianLinkedList GuardianLinkedList;
+#include "geometry/types.h"
 
 // Create an empty list
 static void* ll_create(void) {
@@ -12,25 +11,18 @@ static void* ll_create(void) {
         // Handle allocation failure
         return NULL;
     }
-    return (void*)list->self->guardian_pointer_token;
+    return (void*)list;
 }
 
 // Destroy the list and free nodes
 static void ll_destroy(void* container) {
-    LinkedList* list = (LinkedList*)container;
-    LLNode* node = list->head;
-    while (node) {
-        LLNode* next = node->next;
-        free(node);
-        node = next;
-    }
-    free(list);
+    return memory_ops_retire(container, NODE_FEATURE_IDX_LINKED_LIST);
 }
 
 // Push element to the end
 static void ll_push(void* container, void* element) {
-    LinkedList* list = (LinkedList*)container;
-    LLNode* node = (LLNode*)malloc(sizeof(LLNode));
+    GuardianLinkedList* list = (GuardianLinkedList*)container;
+    GuardianPointerToken* right = list->right;
     node->data = element;
     node->next = NULL;
     if (!list->head) {
