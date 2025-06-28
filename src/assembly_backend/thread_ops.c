@@ -126,28 +126,28 @@ void* thread_ops_get_pointer(long long token) {
     return p;
 }
 
-int guardian_try_lock(TokenGuardian* g, unsigned long lock_token) {
+int try_lock(TokenGuardian* g, unsigned long lock_token) {
     (void)g;
     mutex_t* mutex = thread_ops_get_mutex((long long)lock_token);
     if (!mutex) return 0;
     return guardian_mutex_trylock(mutex);
 }
 
-void guardian_lock(TokenGuardian* g, unsigned long lock_token) {
+void lock(TokenGuardian* g, unsigned long lock_token) {
     (void)g;
     mutex_t* mutex = thread_ops_get_mutex((long long)lock_token);
     if (!mutex) return;
     guardian_mutex_lock(mutex);
 }
 
-void guardian_unlock(TokenGuardian* g, unsigned long lock_token) {
+void unlock(TokenGuardian* g, unsigned long lock_token) {
     (void)g;
     mutex_t* mutex = thread_ops_get_mutex((long long)lock_token);
     if (!mutex) return;
     guardian_mutex_unlock(mutex);
 }
 
-int guardian_is_locked(TokenGuardian* g, unsigned long lock_token) {
+int is_locked(TokenGuardian* g, unsigned long lock_token) {
     (void)g;
     mutex_t* mutex = thread_ops_get_mutex((long long)lock_token);
     if (!mutex) return 0;
