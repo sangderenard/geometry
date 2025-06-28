@@ -201,7 +201,7 @@ typedef struct GuardianThread {
 } GuardianThread;
 
 typedef struct GuardianHeap {
-	GuardianToken * self; // Self-reference for the heap object
+	GuardianObjectSet * self; // Self-reference for the heap object
 	size_t size; // Size of the heap
 	size_t min_allocation; // Minimum allocation size for the heap
 	size_t max_allocation; // Maximum allocation size for the heap
@@ -307,12 +307,14 @@ typedef struct GuardianList {
 	GuardianLinkedList* index_to_pointer; // Index to pointer mapping for fast access
 	GuardianLinkedList* pointer_to_index; // Pointer to index mapping for fast access
 	GuardianMap* index_to_pointer_map; // Map of indices to pointers for fast access
-    TokenGuardian* guardian; // The guardian that owns this list
-    NodeFeatureType feature_type; // The type of payload in the list
+    GuardianObjectSet * self; // Self-reference for the list object
 } GuardianList;
 
 typedef struct GuardianParallelList {
     GuardianList * lists;
+	int num_lists;
+	GuardianObjectSet * self; // Self-reference for the parallel list object
+	
 } GuardianParallelList;
 
 // --- GuardianDict structure ---
@@ -355,7 +357,7 @@ typedef enum NodeOrientationNature {
 } NodeOrientationNature;
 
 typedef struct GuardianStencilSet {
-    GuardianParallelList stencils_orthagonalities_orientations; // what are the stencils, their relationships, and orientation modes
+    GuardianParallelList * stencils_orthagonalities_orientations; // what are the stencils, their relationships, and orientation modes
 } GuardianStencilSet;
 
 typedef struct Node {

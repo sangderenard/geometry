@@ -27,6 +27,7 @@ const OperationSuite* const OperationSuites[NODE_FEATURE_IDX_COUNT] = {
     &graph_ops_pointer_token,      /* NODE_FEATURE_TYPE_POINTER_TOKEN */
     &graph_ops_guardian,           /* NODE_FEATURE_TYPE_GUARDIAN */
     &graph_ops_token,              /* NODE_FEATURE_TYPE_TOKEN */
+    &graph_ops_heap,               /* NODE_FEATURE_TYPE_HEAP */
     &graph_ops_object_set,         /* NODE_FEATURE_TYPE_OBJECT_SET */
     &graph_ops_memory_token,       /* NODE_FEATURE_TYPE_MEMORY_TOKEN */
     &graph_ops_token_lock,         /* NODE_FEATURE_TYPE_TOKEN_LOCK */

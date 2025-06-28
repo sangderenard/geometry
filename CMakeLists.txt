@@ -18,6 +18,13 @@ set(C_SOURCES
     src/assembly_backend/core.c
 )
 add_library(geometry ${C_SOURCES})
+  # Enable SIMD instruction set macros project-wide
+  target_compile_options(geometry PRIVATE
+    # GCC/Clang: enable SSE2 and AVX2
+    $<$<OR:$<C_COMPILER_ID:GNU>,$<C_COMPILER_ID:Clang>>:-msse2;-mavx2>
+    # MSVC: enable AVX2 (implies SSE2)
+    $<$<C_COMPILER_ID:MSVC>:/arch:AVX2>
+  )
 
 # compile SIMD backends with explicit instruction set flags
 set_source_files_properties(src/assembly_backend/simd/simd_impl_avx2.c PROPERTIES COMPILE_FLAGS "-mavx2")

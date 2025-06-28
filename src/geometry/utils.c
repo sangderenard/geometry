@@ -212,11 +212,11 @@ GuardianGeneology * guardian_create_geneology(TokenGuardian* g, GuardianStencilS
 
 TokenGuardian guardian_initialize(TokenGuardian* parent, size_t num_threads) {
     TokenGuardian * g = guardian_global_cache_create(NODE_FEATURE_IDX_GUARDIAN);
-    GuardianObjectSet* self = ___guardian_initialize_obj_set(&g);
+    GuardianObjectSet* self = guardian_initialize_obj_set(g);
     if (!parent) {
 		GuardianToken* pointer_token = instantiate_on_input_cache(NODE_FEATURE_IDX_POINTER_TOKEN);
         self->guardian_pointer_token = pointer_token; // Default token for the guardian
-        g->main_lock = ___guardian_create_token_lock(&g, self->guardian_pointer_token);
+        g->main_lock = guardian_create_token_lock(g, self->guardian_pointer_token);
 		g->token_host = g; // Self-referential token host
 	}
 	else {
@@ -270,33 +270,36 @@ GuardianToken * guardian_create_pointer_token(TokenGuardian* g, void* ptr, NodeF
     GuardianToken * dummy_data = guardian_create_dummy();;
     if (!ptr) return dummy_data; // Return an empty token if the pointer is null
     GuardianToken * token;
-    token->token = ___guardian_register_in_pool_internal_(g, ___guardian_get_unregistered_stack(g, type));
+    token->token = guardian_register_in_pool(g, guardian_get_unregistered_stack(g, type));
 
     if (token->token == 0) {
         // Handle error: unable to create pointer token
         GuardianToken * pointer_token = guardian_get_new_token(g, guardian_sizeof(type));
-        boolean success = ___guardian_register_out_of_heap_pointer_token(g, pointer_token, ptr);
+        boolean success = guardian_register_out_of_heap_pointer_token(g, pointer_token, ptr);
         if (!success) {
             // Handle error: unable to register pointer token
-            return (GuardianToken){0};
+            return NULL;
         }
         return pointer_token;
     }
     return token;
 }
 
-GuardianToken guardian_create_lock_token(TokenGuardian* g) {
-    if (!g) return (GuardianToken){0};
+GuardianToken * guardian_create_lock_token(TokenGuardian* g) {
+    if (!g) {
+        TokenGuardian * dummy = guardian_create_dummy();
+        g = dummy; // Use a dummy guardian if none is provided
+    }
     GuardianToken * lock_token = guardian_get_new_token(g, sizeof(mutex_t));
-    if (lock_token->token == 0) return (GuardianToken){0};
-    mutex_t* mutex = malloc(sizeof(mutex_t));
-    if (!mutex) return (GuardianToken){0};
+    if (lock_token->token == 0) return NULL;
+    mutex_t* mutex = instantiate_on_input_cache(NODE_FEATURE_IDX_MUTEX_T);
+    if (!mutex) return NULL;
     guardian_mutex_init(mutex);
     // Register the mutex in the guardian's lock pool
-    boolean success = ___guardian_register_out_of_heap_pointer_token(g, lock_token, mutex);
+    boolean success = guardian_register_out_of_heap_pointer_token(g, lock_token, mutex);
     if (!success) {
         free(mutex);
-        return (GuardianToken){0};
+        return NULL;
     }
     return lock_token;
 }
@@ -309,8 +312,8 @@ GuardianToken * guardian_create_dummy() {
     dummy_guardian->is_contiguous = false;
     dummy_guardian->is_synchronized = false;
 
-    dummy_guardian->self = ___guardian_initialize_obj_set(&dummy_guardian);
-    dummy_guardian->main_lock = ___guardian_create_token_lock(&dummy_guardian, dummy_guardian.self.guardian_pointer_token);
+    dummy_guardian->self = guardian_initialize_obj_set(&dummy_guardian);
+    dummy_guardian->main_lock = guardian_create_token_lock(&dummy_guardian, dummy_guardian->self->guardian_pointer_token);
 
     dummy_guardian->max_threads = 1;
     dummy_guardian->min_allocation = 0;
@@ -342,6 +345,19 @@ GuardianLinkedList * guardian_linked_list_set_chain(GuardianLinkedList * list, G
     return list;
 }
 
+GuardianList * guardian_parallel_list_set_list(int index, GuardianParallelList * list, GuardianList * data) {
+    int num_lists = list ? list->num_lists : 0;
+    if (!list || !data || index < 0 || index >= list->num_lists) return false;
+    if (index >= num_lists) {
+        graph_ops_list.set(list->lists, index, data); // Ensure the list has enough space
+        list->num_lists++;
+    } else if (index > 0 && index < num_lists) {
+        // Ensure the list has enough space
+        graph_ops_list.set(list->lists, index, data);
+    }
+    return true;
+}
+
 const MAX_LINK_LIST_SIZE = 1000000; // Maximum size for linked lists
 GuardianLinkedList * guardian_create_linked_list(TokenGuardian* g, int initialized_length, int type, void** data) {
     GuardianLinkedList * list = instantiate_on_input_cache(NODE_FEATURE_IDX_LINKED_LIST);
@@ -362,41 +378,61 @@ GuardianList* guardian_create_list(TokenGuardian* g, int initialized_length, int
     return list;
 }
 
-GuardianStencilSet ___guardian_create_stencil_set_internal_(TokenGuardian* g, GuardianList stencils, GuardianList orthagonalities, GuardianList orientations) {
-    GuardianStencilSet set;
-    GuardianObjectSet self;
-	self = ___guardian_initialize_obj_set(g);
-    set.stencils_orthagonalities_orientations = ___guardian_create_parallel_list_internal_(self.guardian, 3);
+GuardianStencilSet * guardian_create_stencil_set_internal_(TokenGuardian* g, GuardianList* stencils, GuardianList* orthagonalities, GuardianList* orientations) {
+    GuardianStencilSet * set = instantiate_on_input_cache(NODE_FEATURE_IDX_STENCIL_SET);
+    GuardianObjectSet * self = guardian_initialize_obj_set(g);
+    set->stencils_orthagonalities_orientations = guardian_create_parallel_list(self->guardian, 3);
     
-	boolean success = ___guardian_parallel_list_set_list(0, set.stencils_orthagonalities_orientations, stencils);
+	boolean success = guardian_parallel_list_set_list(0, set->stencils_orthagonalities_orientations, stencils);
     if (!success) {
         // Handle error: unable to set stencils
-		return (GuardianStencilSet) { 0 };
-    success = ___guardian_parallel_list_set_list(1, set.stencils_orthagonalities_orientations, orthagonalities);
+		return NULL;
+    }
+    success = guardian_parallel_list_set_list(1, set->stencils_orthagonalities_orientations, orthagonalities);
     if (!success) {
         // Handle error: unable to set orthagonalities
-        return (GuardianStencilSet) { 0 };
+        return NULL;
 	}
-    success = ___guardian_parallel_list_set_list(2, set.stencils_orthagonalities_orientations, orientations);
+    success = guardian_parallel_list_set_list(2, set->stencils_orthagonalities_orientations, orientations);
     if (!success) {
         // Handle error: unable to set orientations
-		return (GuardianStencilSet) { 0 };
-
+		return NULL;
+    }
     return set;
 }
 
-boolean guardian_lock_with_timeout(TokenGuardian* g, GuardianToken guardian_lock_token, int duration, boolean reentrant) {
+boolean guardian_token_lock_checkout_check(TokenGuardian* g, GuardianToken* token, boolean reentrant) {
+    if (!g || !token) return false;
+    
+    GuardianToken* guardian_object_token = g->self->guardian_pointer_token;
+    if (!guardian_object_token || guardian_object_token->token == 0) {
+        // Handle error: invalid guardian object token
+        return false;
+    } else if (reentrant && guardian_object_token->token == token->token) {
+        // Token is already owned by this thread, can skip locking
+        return true;
+    }
+    if (!memory_ops_locks_checked_out(token->token)) {
+        // Token is not in use, can be locked
+        return true;
+    }
+    // Token is already in use, cannot lock
+    return false;
+}
+
+boolean guardian_lock_with_timeout(TokenGuardian* g, GuardianToken* guardian_lock_token, int duration, boolean reentrant) {
+    boolean set_lock = false;
     if (!duration) {
         duration = 1000; // Default to 1 second if no duration is specified
 	}   
     if (reentrant) {
-        if (___guardian_token_lock_owners_check(g, guardian_lock_token.token)) {
+        if (memory_ops_lock_checkout_check(g, guardian_lock_token->token, reentrant)) {
             // If the token is already owned by this thread, we can skip locking
-            return true;
+            set_lock = true;
         }
     }
 
-    while (guardian_try_lock(g, guardian_lock_token.token) == 0 && duration > 0 ) {
+    while (!set_lock && memory_ops_try_lock(g, guardian_lock_token->token) == 0 && duration > 0 ) {
         // Wait for a short period before retrying
         usleep(1000); // Sleep for 1 millisecond
 		duration -= 1; // Decrease the remaining duration
@@ -407,50 +443,58 @@ boolean guardian_lock_with_timeout(TokenGuardian* g, GuardianToken guardian_lock
         return false;
     }
     // Lock acquired successfully
-	return true;
+	set_lock = true;
+    if (set_lock) {
+        
+        return memory_ops_set_lock(guardian_lock_token, g);
+    }
+    return false; // Unable to acquire lock
 }
 
 GuardianToken* guardian_register_in_pool(TokenGuardian* g, GuardianStack* unregistered_stack) {
-    if (!g || token.token == 0) return (GuardianToken){0};
-    guardian_lock_with_timeout(g->main_lock);
-	boolean success = ___guardian_add_stack_to_pool_internal_(g, unregistered_stack);
+    if (!g) {
+        g = guardian_create_dummy(); // Create a dummy guardian if none is provided
+    }
+    GuardianToken * object_token = g->heap->self->guardian_lock_token;
+    guardian_lock_with_timeout(g, object_token , 1000, false);
+	boolean success = guardian_add_stack_to_pool(g, unregistered_stack);
 	
     if (!success) {
         // Handle error: unable to register stack in pool
-        guardian_unlock(g->main_lock);
-        return (GuardianToken){0};
+        memory_ops_unlock(object_token);
+        return NULL;
     }
-    g.is_contiguous = false; // Reset contiguous flag for the stack
-	void* stack_location = unregistered_stack.data; // Get the stack location
-    if (g.auto_contiguous_allocation) {
+    g->is_contiguous = false; // Reset contiguous flag for the stack
+	void* stack_location = unregistered_stack->data; // Get the stack location
+    if (g->auto_contiguous_allocation) {
         // Attempt to allocate contiguous memory for the stack
-        if (!___guardian_try_contiguous_wait(g)) {
+        if (!guardian_try_contiguous_wait(g)) {
             // Handle error: unable to allocate contiguous memory
-            guardian_unlock(g->main_lock);
-            return (GuardianToken){0};
+            memory_ops_unlock(object_token);
+            return NULL;
         }
 
 	}
-    ___guardian_try_contiguous_nowait(g);
+    guardian_try_contiguous_nowait(g);
     
-	GuardianToken memory_token = ___guardian_get_new_token(g, sizeof(GuardianStack));
-    if (memory_token.token == 0) {
+	GuardianToken * memory_token = guardian_get_new_token(g, sizeof(GuardianStack));
+    if (memory_token->token == 0) {
         // Handle error: unable to get a new token
-        guardian_unlock(g->main_lock);
-        return (GuardianToken){0};
+        memory_ops_unlock(object_token);
+        return NULL;
     }
     
-    if (memory_token.token == 0) {
+    if (memory_token->token == 0) {
         // Handle error: unable to create pointer token for the stack
-        guardian_unlock(g->main_lock);
-        return (GuardianToken){0};
+        memory_ops_unlock(object_token);
+        return NULL;
     }
 	// Successfully registered the stack and created a new token
-	guardian_unlock(g->main_lock);
+	memory_ops_unlock(object_token);
     return memory_token;
 }
 
-boolean ___guardian_ask_for_block_internal_(TokenGuardian* g, GuardianObjectSet* obj_set, int count) {
+boolean guardian_ask_for_block(TokenGuardian* g, GuardianObjectSet* obj_set, int count) {
     if (!g || !obj_set || count <= 0) return false;
     // Check if the guardian is initialized
     if (!g->is_initialized) {
@@ -458,18 +502,18 @@ boolean ___guardian_ask_for_block_internal_(TokenGuardian* g, GuardianObjectSet*
         return false;
     }
     // Check if the object set is valid
-    if (obj_set->guardian_pointer_token.token == 0) {
+    if (obj_set->guardian_pointer_token->token == 0) {
         // Handle error: invalid object set
         return false;
     }
-    boolean contiguous_success = ___guardian_contiguous_nowait(g->heap, obj_set, count);
-    boolean gap_success = ___guardian_scan_map_for_gaps(g->heap, obj_set, count);
+    boolean contiguous_success = graph_ops_heap.math_ops.make_contiguous_no_wait(g->heap, obj_set, count);
+    boolean gap_success = graph_ops_heap.math_ops.gap_inventory(g->heap, obj_set, count);
     if(!gap_success){
-        contiguous_success = ___guardian_contiguous_wait_with_timeout(g->heap, obj_set, count);
+        contiguous_success = graph_ops_heap.math_ops.make_contiguous_wait_timeout(g->heap, obj_set, count);
         if (!contiguous_success) {
             if (g->auto_contiguous_allocation) {
                 // Attempt to allocate contiguous memory block
-                contiguous_success = ___guardian_contiguous_force(g->heap, obj_set, count);
+                contiguous_success = graph_ops_heap.math_ops.make_contiguous_force(g->heap, obj_set, count);
                 if (!contiguous_success) {
                     // Handle error: unable to allocate contiguous memory block
                     return false;
@@ -485,212 +529,39 @@ boolean ___guardian_ask_for_block_internal_(TokenGuardian* g, GuardianObjectSet*
     return true; // Successfully allocated the block
 }
 
-GuardianObjectSet ___guardian_create_node_object_set_internal_(TokenGuardian* g, int count) {
-	GuardianObjectSet obj_set;
-	obj_set = ___guardian_initialize_obj_set(g);
-    boolean lock_state = guardian_token_unlock(obj_set.guardian, obj_set.guardian_lock_token.token);
+GuardianObjectSet * guardian_create_node_object_set(TokenGuardian* g, int count) {
+	GuardianObjectSet * obj_set = guardian_initialize_obj_set(g);
+    boolean lock_state = memory_ops_unlock(obj_set->guardian, obj_set->guardian_lock_token->token);
     if (!lock_state) {
         // Handle error: unable to unlock the guardian lock token
-        return (GuardianObjectSet){0};
+        return NULL;
 	}
-    obj_set.guardian_pointer_token.token = guardian_create_pointer_token(g, &obj_set);
 
-    if (obj_set.guardian_pointer_token.token == 0) {
+    if (obj_set->guardian_pointer_token->token == 0) {
         // Handle error: unable to create pointer token
-		return (GuardianObjectSet) { 0 };
-
-	GuardianToken authorized_tracked_token = ___guardian_register_in_pool_internal_(g, __guardian_ask_for_block_internal_(g, &obj_set.guardian_pointer_token, count));
+		return NULL;
+    }
+	GuardianToken * authorized_tracked_token = guardian_register_in_pool(g, guardian_ask_for_block(g, obj_set->guardian_pointer_token, count), count);
+    obj_set->guardian_pointer_token = authorized_tracked_token;
+    return obj_set;
+    
 }
     
-GuardianObjectSet * ___guardian_initialize_obj_set( TokenGuardian* g){
+GuardianObjectSet * guardian_initialize_obj_set( TokenGuardian* g){
+    GuardianObjectSet* obj_set = NULL;
     if (!g) {
-	    GuardianObjectSet obj_set = guardian_create_object_in_free_queue();	}
+	    obj_set = instantiate_on_input_cache(NODE_FEATURE_IDX_OBJECT_SET);
+        g = guardian_create_dummy();
+        obj_set->guardian = g; // Link the object set to the guardian
     }
     else {
-        GuardianObjectSet obj_set = guardian_create_object_in_heap_queue(g);
-        
+        obj_set = instantiate_on_heap(NODE_FEATURE_IDX_OBJECT_SET);
+        obj_set->guardian = g;
     }
-    if (!obj_set.guardian_pointer_token.token) {
-            // Handle error: unable to create object set
-            return (GuardianObjectSet){0};
-    }
-    obj_set.guardian_pointer_token.token = 0; // Initialize with a dummy token
-    if (g) {
-        obj_set.guardian = g;
-    }
-    else {
-        g = guardian_create_dummy(); // Create a new guardian if none is provided
-        if (!g) {
-            // Handle error: unable to create guardian
-            return (GuardianObjectSet){0};
-        }
-    }
-    obj_set.guardian = g;
-    obj_set.guardian_lock_token = guardian_create_lock_token(g);
+    obj_set->guardian_lock_token = guardian_create_lock_token(g);
     return obj_set;
 }
 
-// === GuardianToken structure ===
-// Full structure:
-// typedef struct GuardianToken {
-//     unsigned long token; // Unique token for the guardian
-//     size_t size;         // Size of the memory block managed by this token
-// } GuardianToken;
-
-// === GuardianObjectSet structure ===
-// Full structure:
-// typedef struct GuardianObjectSet {
-//     GuardianToken guardian_pointer_token; // Unique token for the object
-//     TokenGuardian* guardian; // Pointer to the guardian managing this object
-//     GuardianToken guardian_lock_token; // Lock token for thread safety
-// } GuardianObjectSet;
-
-// === TokenGuardian structure ===
-// Full structure:
-// typedef struct TokenGuardian {
-//     mutex_t mutex;
-//     size_t num_threads, cap_threads;
-//     size_t min_allocation, max_allocation;
-// } TokenGuardian;
-
-// === GuardianPointerToken structure ===
-// Full structure:
-// typedef struct GuardianPointerToken {
-//     GuardianToken token; // Unique token for the pointer
-//     size_t size, span; // Size of the unit / size of the memory block (in units)
-// } GuardianPointerToken;
-
-// === GuardianLinkedList structure ===
-// Full structure:
-// typedef struct GuardianLinkedList {
-//     GuardianToken left;
-//     GuardianToken right;
-//     size_t max_size; // Maximum size of the linked list
-//     boolean is_contiguous; // Flag for contiguous allocation
-//     size_t list_size; // Current size of the linked list
-// } GuardianLinkedList;
-
-// === GuardianDict structure ===
-// Full structure:
-// typedef struct GuardianDict {
-//     size_t total_allocation_size; // Total allocated size
-//     size_t used_allocation_size;  // Number of used entries
-//     GuardianLinkedList keys;
-//     GuardianLinkedList values; // Internal representation of the set (e.g., hash table or tree)
-// } GuardianDict;
-
-// === GuardianList structure ===
-// Full structure:
-// typedef struct GuardianList {
-//     size_t total_allocation_size; // Total allocated size
-//     size_t used_allocation_size;  // Number of used entries
-//     GuardianLinkedList entry_set; // Dictionary for non-contiguous entries (indices to pointer tokens)
-// } GuardianList;
-
-// === GuardianParallelList structure ===
-// Full structure:
-// typedef struct GuardianParallelList {
-//     GuardianList lists;
-// } GuardianParallelList;
-
-// === GuardianSet structure ===
-// Full structure:
-// typedef struct GuardianSet {
-//     size_t total_allocation_size; // Total allocated size
-//     size_t used_allocation_size;  // Number of used entries
-//     GuardianLinkedList entry_set; // Internal representation of the set (e.g., hash table or tree)
-// } GuardianSet;
-
-// === GuardianMap structure ===
-// Full structure:
-// typedef struct GuardianMap {
-//     GuardianList a_to_b_hash; // All origins and exits implied by valid paths plus directional metadata with their composed pointer sequences
-//     GuardianParallelList paths_and_subweights; // List of valid paths using pole features from stencil set of the edge and the valid function flows
-//     GuardianSet poles; // The inputs or outputs or both that describe the stencil of the edge - it's agnostic connection points
-//     GuardianSet function_flows; // Valid function pointer sequences by parameter types and available translations
-// } GuardianMap;
-
-// === GuardianStencil structure ===
-// Full structure:
-// typedef struct GuardianStencil {
-//     GeneralStencil stencil; // GeneralStencil
-// } GuardianStencil;
-
-// === NodeOrientationNature enum ===
-// Full structure:
-// enum NodeOrientationNature {
-//     NODE_ORIENTATION_DOMAIN_PARALLEL = 0, // Parallel to domain
-//     NODE_ORIENTATION_FIXED = 1, // Fixed orientation to be set by user
-//     NODE_ORIENTATION_ITERATIVE = 2, // Iterative orientation solved by physics engine
-//     NODE_ORIENTATION_DOMAIN_TRANSFORM = 3, // Domain transformation
-//     NODE_ORIENTATION_SPACE_FILLING_PATTERN = 4, // Space filling orientation (ie tetrahedral, hexahedral, etc. patterns)
-// };
-
-// === GuardianStencilSet structure ===
-// Full structure:
-// typedef struct GuardianStencilSet {
-//     GuardianParallelList stencils_orthagonalities_orientations; // What are the stencils, their relationships, and orientation modes
-// } GuardianStencilSet;
-
-// === Node structure ===
-
-// === EdgeAttribute structure ===
-
-// === Subedge structure ===
-
-// === EdgeType structure ===
-
-// === Edge structure ===
-
-// === GuardianEdge structure ===
-// Full structure:
-// typedef struct GuardianEdge {
-//     Edge edge;
-// } GuardianEdge;
-
-// === GuardianGeneology structure ===
-// Full structure:
-// typedef struct GuardianGeneology {
-//     GuardianObjectSet self; // Self-reference for the geneology object
-//     int kernel_radius; // Radius of the kernel for cross-stencil node kernels in terms of recursive stencil points
-//     GuardianParallelList cross_stencil_node_kernels_correlated_with_edges; // Cross-stencil node kernels correlated with edges
-// } GuardianGeneology;
-
-// === GuardianSimpleGraph structure ===
-// Full structure:
-// typedef struct GuardianSimpleGraph {
-//     GuardianObjectSet self; // Self-reference for the graph object
-//     GuardianGeneology geneology; // A guardian object containing tiling relationships for node fields
-//     GuardianSet nodes; // Set of nodes in the graph
-//     GuardianSet edges; // Set of edges in the graph
-// } GuardianSimpleGraph;
-
-
-
-
-TokenGuardian* ___guardian_create_internal_(void) {
-    TokenGuardian* g = calloc(1, sizeof(TokenGuardian));
-    if (!g) return NULL;
-    g->mutex = guardian_mutex_init();
-    return g;
-}
-
-void ___guardian_destroy_internal_(TokenGuardian* g) {
-    if (!g) return;
-    guardian_mutex_lock(&g->mutex);
-    free(g->threads);
-    for (size_t i = 0; i < g->num_memories; ++i) free(g->memories[i].block);
-    free(g->memories);
-    while (g->msg_head) {
-        GuardianMessage* tmp = g->msg_head;
-        g->msg_head = tmp->next;
-        free(tmp->data);
-        free(tmp);
-    }
-    ___guardian_mutex_unlock_internal_(&g->mutex);
-    ___guardian_mutex_destroy_internal_(&g->mutex);
-    free(g);
-}
 
 static unsigned long thread_counter = 0;
 

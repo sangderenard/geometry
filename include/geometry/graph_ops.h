@@ -5,6 +5,7 @@
 extern "C" {
 #endif
 
+#include "geometry/guardian_platform.h"
 #include <stddef.h>
 
 typedef enum {
@@ -45,7 +46,9 @@ typedef enum {
     NODE_FEATURE_IDX_RADIX_ENCODING,
     NODE_FEATURE_IDX_PATTERN_PALETTE_STREAM,
     NODE_FEATURE_IDX_ENCODING_ENGINE,
-    NODE_FEATURE_IDX_COUNT
+    NODE_FEATURE_IDX_COUNT,
+    NODE_FEATURE_IDX_MUTEX_T, // Special index for mutex type
+    NODE_FEATURE_IDX_STENCIL_SET, // Special index for stencil set
 } NodeFeatureIndex;
 
 /* Flags describing high level feature categories for dynamic type checks */
@@ -175,8 +178,17 @@ typedef void* (*graph_union_fn)(void* a, void* b, GraphOpRegion region);
 typedef void* (*graph_intersection_fn)(void* a, void* b, GraphOpRegion region);
 typedef void* (*graph_difference_fn)(void* a, void* b, GraphOpRegion region);
 typedef int   (*graph_subset_fn)(void* a, void* b, GraphOpRegion region);
+// Detect available gaps (free blocks) in a heap-like container
+typedef boolean (*graph_gap_inventory_fn)(void* container, void* obj_set, size_t count);
 
-typedef void  (*graph_make_contiguous_fn)(void* container);
+typedef boolean  (*graph_make_contiguous_fn)(void* container);
+typedef boolean  (*graph_make_contiguous_no_wait_fn)(void* container);
+typedef boolean  (*graph_make_contiguous_wait_fn)(void* container);
+typedef boolean  (*graph_make_contiguous_wait_timeout_fn)(void* container);
+typedef boolean  (*graph_make_contiguous_force_fn)(void* container);
+
+
+
 typedef void  (*graph_sync_fn)(void* container);
 typedef void* (*graph_factorize_fn)(void* a, GraphOpRegion region);
 typedef void* (*graph_gcf_fn)(void* a, void* b, GraphOpRegion region);
@@ -239,7 +251,12 @@ typedef struct {
     graph_intersection_fn set_intersection;
     graph_difference_fn  set_difference;
     graph_subset_fn      is_subset;
+    graph_gap_inventory_fn gap_inventory;
     graph_make_contiguous_fn make_contiguous;
+    graph_make_contiguous_no_wait_fn make_contiguous_no_wait;
+    graph_make_contiguous_wait_fn make_contiguous_wait;
+    graph_make_contiguous_wait_timeout_fn make_contiguous_wait_timeout;
+    graph_make_contiguous_force_fn make_contiguous_force;
     graph_sync_fn         sync;
     graph_factorize_fn    factorize;
     graph_gcf_fn          gcf;

@@ -43,6 +43,8 @@ extern "C" {
 #include "geometry/graph_ops_radix_encoding.h"
 #include "geometry/graph_ops_pattern_palette_stream.h"
 #include "geometry/graph_ops_encoding_engine.h"
+#include "geometry/graph_ops_heap.h"
+
 
 /* Array of pointers to each suite; defined in graph_ops_handler.c */
 extern const OperationSuite* const OperationSuites[NODE_FEATURE_IDX_COUNT];
