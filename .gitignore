@@ -3,6 +3,8 @@ build/
 *.obj
 *.so
 *.dll
+*vcxproj*
+*CMake*
 *.dylib
 *.exe
 *.pyc
@@ -10,3 +12,4 @@ __pycache__/
 .vs/
 .vscode/
 .idea/
+*.sln

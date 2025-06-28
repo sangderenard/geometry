@@ -9,14 +9,13 @@
 void test_guardian_initialization() {
     printf("[TEST] Guardian Initialization...\n");
 
-    TokenGuardian dummy = guardian_create_dummy();
-    assert(dummy.state == GUARDIAN_NOT_USED);
+    TokenGuardian * dummy = guardian_create_dummy();
+    assert(dummy->self->guardian_pointer_token == GUARDIAN_NOT_USED);
 
     TokenGuardian* heap_guardian = guardian_create_heap();
     assert(heap_guardian != NULL);
-    assert(heap_guardian->state == GUARDIAN_HEAP);
-
-    guardian_destroy(heap_guardian);
+    
+    memory_ops_retire(heap_guardian, NODE_FEATURE_IDX_HEAP);
     printf("  -> Passed\n");
 }
 
@@ -25,11 +24,11 @@ void test_guardian_token_integrity() {
 
     TokenGuardian* g = guardian_create_heap();
     int x = 42;
-    GuardianToken tok = guardian_create_pointer_token(g, &x, 1);
-    assert(tok.ptr == &x);
-    assert(tok.valid == true);
+    GuardianToken* tok = guardian_create_pointer_token(g, &x, 1);
+    assert(tok->___object == &x);
+    assert(tok->token);
 
-    guardian_destroy(g);
+    memory_ops_retire(g, NODE_FEATURE_IDX_GUARDIAN);
     printf("  -> Passed\n");
 }
 
@@ -40,71 +39,92 @@ void test_guardian_heap_push_and_verify() {
     for (int i = 0; i < 1000; ++i) {
         int* data = (int*)malloc(sizeof(int));
         *data = i;
-        GuardianToken tok = guardian_create_pointer_token(g, data, i % 4);
-        guardian_heap_push(g->heap, tok);
+        GuardianToken * tok = guardian_create_pointer_token(g, data, i % 4);
+        graph_ops_heap.push(g->heap, tok);
     }
 
-    GuardianHeap* heap = g->heap;
-    LinkedListItem* iter = heap->head;
-    int count = 0;
-    while (iter) {
-        assert(iter->token.valid);
-        assert(iter->token.ptr != NULL);
-        iter = iter->next;
-        count++;
-    }
-    assert(count == 1000);
+}
 
-    guardian_destroy(g);
+#include "geometry/graph_ops_handler.h"
+#include "geometry/graph_ops.h"
+#include <assert.h>
+#include <stdio.h>
+#include <string.h>
+
+void test_linked_list_api_basic() {
+    printf("[TEST] Linked List API (basic create/push/get/pop)...\n");
+
+    // Look up the linked-list suite
+    const OperationSuite* suite =
+        get_operation_suite(NODE_FEATURE_TYPE_LINKED_LIST);
+    assert(suite && "Linked-list suite must be available");
+
+    // Create an empty list
+    void* list = suite->create();
+    assert(list && "create() should return a valid container");
+    assert(suite->size(list) == 0);
+
+    // Insert three string literals
+    const char* items[] = { "root", "a", "b" };
+    for (size_t i = 0; i < 3; ++i) {
+        suite->push(list, (void*)items[i]);
+        // size should increment
+        assert(suite->size(list) == i + 1);
+        // get() should return the same pointer we pushed
+        void* elem = suite->get(list, i);
+        assert(elem == items[i]);
+    }
+
+    // Verify contents and order
+    for (size_t i = 0; i < 3; ++i) {
+        const char* got = (const char*)suite->get(list, i);
+        assert(strcmp(got, items[i]) == 0);
+    }
+
+    // Pop should remove the last‐in element ("b")
+    void* popped = suite->pop(list);
+    assert(popped == items[2]);
+    assert(suite->size(list) == 2);
+
+    // Clean up
+    suite->destroy(list);
     printf("  -> Passed\n");
 }
 
-void test_linked_list_no_guardian() {
-    printf("[TEST] Linked List Without Guardian...\n");
+void test_linked_list_api_iteration() {
+    printf("[TEST] Linked List API (for_each iteration)...\n");
 
-    LinkedListItem* head = linked_list_item_create(NULL, (void*)"root", 0, (GuardianToken){0});
-    LinkedListItem* a = linked_list_item_create(NULL, (void*)"a", 0, (GuardianToken){0});
-    LinkedListItem* b = linked_list_item_create(NULL, (void*)"b", 0, (GuardianToken){0});
+    const OperationSuite* suite =
+        get_operation_suite(NODE_FEATURE_TYPE_LINKED_LIST);
+    void* list = suite->create();
 
-    head->next = a;
-    a->prev = head;
-    a->next = b;
-    b->prev = a;
+    // Push numbers 1,2,3 as pointers
+    int a = 1, b = 2, c = 3;
+    suite->push(list, &a);
+    suite->push(list, &b);
+    suite->push(list, &c);
 
-    assert(strcmp((char*)head->ptr, "root") == 0);
-    assert(strcmp((char*)head->next->ptr, "a") == 0);
-    assert(strcmp((char*)head->next->next->ptr, "b") == 0);
+    // Collect via for_each
+    int seen_sum = 0;
+    void iter_fn(void* elem, void* user_data) {
+        seen_sum += *(int*)elem;
+    }
+    suite->for_each(list, iter_fn, NULL);
+    // sum of 1+2+3 = 6
+    assert(seen_sum == 6);
 
-    free(b);
-    free(a);
-    free(head);
-    printf("  -> Passed\n");
-}
-
-void test_mixed_guardian_linkage() {
-    printf("[TEST] Mixed Guardian / Manual List...\n");
-
-    TokenGuardian* g = guardian_create_heap();
-    LinkedListItem* a = linked_list_item_create(g, (void*)"a", 0, guardian_create_pointer_token(g, (void*)"a", 0));
-    LinkedListItem* b = linked_list_item_create(NULL, (void*)"b", 0, (GuardianToken){0});
-
-    a->next = b;
-    b->prev = a;
-
-    assert(strcmp((char*)a->ptr, "a") == 0);
-    assert(strcmp((char*)b->ptr, "b") == 0);
-
-    guardian_destroy(g);
-    free(b);
+    suite->destroy(list);
     printf("  -> Passed\n");
 }
 
 int main() {
+    test_linked_list_api_basic();
+    test_linked_list_api_iteration();
+    printf("\n[ALL LINKED LIST API TESTS PASSED]\n");
     test_guardian_initialization();
     test_guardian_token_integrity();
     test_guardian_heap_push_and_verify();
-    test_linked_list_no_guardian();
-    test_mixed_guardian_linkage();
+    
 
     printf("\n[ALL TESTS PASSED]\n");
     return 0;

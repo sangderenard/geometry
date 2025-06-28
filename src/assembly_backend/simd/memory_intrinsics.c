@@ -1,6 +1,9 @@
+#include "assembly_backend/core.h"
 #include "assembly_backend/simd/memory_intrinsics.h"
 #include "assembly_backend/simd/simd_dispatch.h"
 #include <stdlib.h>
+#include <immintrin.h> // Include AVX2 intrinsics
+#include "assembly_backend/simd/simd_types.h" // Include SIMD type definitions
 #if defined(_MSC_VER)
   #include <malloc.h>
 #endif

@@ -210,7 +210,7 @@ GuardianGeneology * guardian_create_geneology(TokenGuardian* g, GuardianStencilS
     return geneology;
 }
 
-TokenGuardian guardian_initialize(TokenGuardian* parent, size_t num_threads) {
+TokenGuardian * guardian_initialize(TokenGuardian* parent, size_t num_threads) {
     TokenGuardian * g = guardian_global_cache_create(NODE_FEATURE_IDX_GUARDIAN);
     GuardianObjectSet* self = guardian_initialize_obj_set(g);
     if (!parent) {
@@ -506,14 +506,14 @@ boolean guardian_ask_for_block(TokenGuardian* g, GuardianObjectSet* obj_set, int
         // Handle error: invalid object set
         return false;
     }
-    boolean contiguous_success = graph_ops_heap.math_ops.make_contiguous_no_wait(g->heap, obj_set, count);
-    boolean gap_success = graph_ops_heap.math_ops.gap_inventory(g->heap, obj_set, count);
+    boolean contiguous_success = graph_ops_heap.math_ops.make_contiguous_no_wait(g->heap);
+    boolean gap_success = graph_ops_heap.math_ops.gap_inventory(g->heap);
     if(!gap_success){
-        contiguous_success = graph_ops_heap.math_ops.make_contiguous_wait_timeout(g->heap, obj_set, count);
+        contiguous_success = graph_ops_heap.math_ops.make_contiguous_wait_timeout(g->heap);
         if (!contiguous_success) {
             if (g->auto_contiguous_allocation) {
                 // Attempt to allocate contiguous memory block
-                contiguous_success = graph_ops_heap.math_ops.make_contiguous_force(g->heap, obj_set, count);
+                contiguous_success = graph_ops_heap.math_ops.make_contiguous_force(g->heap);
                 if (!contiguous_success) {
                     // Handle error: unable to allocate contiguous memory block
                     return false;
