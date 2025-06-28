@@ -871,46 +871,6 @@ GuardianToken guardian_create_token(
     return token;
 }
 
-// === Friendly Lock Functions ===
-
-// Try to acquire a lock using a token
-int guardian_try_lock(TokenGuardian* g, unsigned long lock_token) {
-    if (!g || lock_token == 0) return 0; // 0 for failure
-    mutex_t* mutex = (mutex_t*)___guardian_deref_neighbor_internal_(g, lock_token, 0, NULL);
-    if (!mutex) return 0; // 0 for failure
-    return guardian_mutex_trylock(mutex); // 1 for success, 0 for failure
-}
-
-// Acquire a lock using a token
-void guardian_lock(TokenGuardian* g, unsigned long lock_token) {
-    if (!g || lock_token == 0) return;
-    mutex_t* mutex = (mutex_t*)___guardian_deref_neighbor_internal_(g, lock_token, 0, NULL);
-    if (!mutex) return;
-    guardian_mutex_lock(mutex);
-}
-
-// Release a lock using a token
-void guardian_unlock(TokenGuardian* g, unsigned long lock_token) {
-    if (!g || lock_token == 0) return;
-    mutex_t* mutex = (mutex_t*)___guardian_deref_neighbor_internal_(g, lock_token, 0, NULL);
-    if (!mutex) return;
-    guardian_mutex_unlock(mutex);
-}
-
-// Check if a lock is held using a token
-int guardian_is_locked(TokenGuardian* g, unsigned long lock_token) {
-    if (!g || lock_token == 0) return 0;
-    mutex_t* mutex = (mutex_t*)___guardian_deref_neighbor_internal_(g, lock_token, 0, NULL);
-    if (!mutex) return 0; // Cannot determine, assume not locked
-    // Attempt to lock and immediately unlock.
-    if (guardian_mutex_trylock(mutex)) {
-        // We got the lock, so it wasn't locked.
-        guardian_mutex_unlock(mutex);
-        return 0; // Not locked
-    }
-    return 1; // Was locked
-}
-
 // === Object Dereferencer ===
 
 // Exchange a token for the object a pointer is pointing to

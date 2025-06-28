@@ -15,6 +15,7 @@ set(C_SOURCES
     src/assembly_backend/simd/simd_impl_sse2.c
     src/assembly_backend/simd/simd_impl_fallback.c
     src/assembly_backend/simd/memory_intrinsics.c
+    src/assembly_backend/thread_ops.c
     src/assembly_backend/core.c
 )
 add_library(geometry ${C_SOURCES})
