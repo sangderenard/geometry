@@ -5,7 +5,7 @@
 extern "C" {
 #endif
 
-#import "types.h"
+#include "geometry/types.h"
 
 Emergence* emergence_create(void);
 void emergence_destroy(Emergence* e);
@@ -15,7 +15,7 @@ void emergence_resolve(Emergence* e);
 void emergence_update(Emergence* e, Node* node, double activation, uint64_t global_step, uint64_t timestamp);
 
 
-/* GuardianLinkNode definition provided by guardian_link_cache.h */
+// GuardianLinkNode is defined in geometry/types.h
 GuardianToken * guardian_create_pointer_token(TokenGuardian* g, void* ptr, NodeFeatureType type);
 
 

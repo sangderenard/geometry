@@ -19,13 +19,21 @@ set(C_SOURCES
     src/assembly_backend/core.c
 )
 add_library(geometry ${C_SOURCES})
-  # Enable SIMD instruction set macros project-wide
-  target_compile_options(geometry PRIVATE
-    # GCC/Clang: enable SSE2 and AVX2
-    $<$<OR:$<C_COMPILER_ID:GNU>,$<C_COMPILER_ID:Clang>>:-msse2;-mavx2>
-    # MSVC: enable AVX2 (implies SSE2)
-    $<$<C_COMPILER_ID:MSVC>:/arch:AVX2>
-  )
+
+# Enable SIMD instruction set macros project-wide
+if (CMAKE_C_COMPILER_ID STREQUAL "GNU" OR CMAKE_C_COMPILER_ID STREQUAL "Clang")
+  # GCC/Clang: enable SSE2 and AVX2
+  target_compile_options(geometry PRIVATE -msse2 -mavx2)
+elseif (CMAKE_C_COMPILER_ID STREQUAL "MSVC")
+  # MSVC: enable AVX2 (implies SSE2)
+  target_compile_options(geometry PRIVATE /arch:AVX2)
+endif()
+
+# Enable NEON on ARM/AArch64 with GCC/Clang
+if ((CMAKE_C_COMPILER_ID STREQUAL "GNU" OR CMAKE_C_COMPILER_ID STREQUAL "Clang") AND
+    (CMAKE_SYSTEM_PROCESSOR MATCHES "arm.*" OR CMAKE_SYSTEM_PROCESSOR MATCHES "aarch64.*"))
+  target_compile_options(geometry PRIVATE -mfpu=neon)
+endif()
 
 # compile SIMD backends with explicit instruction set flags
 set_source_files_properties(src/assembly_backend/simd/simd_impl_avx2.c PROPERTIES COMPILE_FLAGS "-mavx2")
@@ -65,3 +73,28 @@ add_test(NAME complex_numbers_test COMMAND complex_numbers_test)
 add_executable(linked_list_creation_test tests/linked_list_creation_test.c)
 target_link_libraries(linked_list_creation_test geometry)
 add_test(NAME linked_list_creation_test COMMAND linked_list_creation_test)
+
+# Additional configuration for GeometryTests
+project(GeometryTests)
+
+# Set the C standard
+set(CMAKE_C_STANDARD 99)
+set(CMAKE_C_STANDARD_REQUIRED ON)
+
+# Include directories
+include_directories(${CMAKE_SOURCE_DIR}/src)
+include_directories(${CMAKE_SOURCE_DIR}/tests)
+
+# Add source files
+file(GLOB_RECURSE SRC_FILES ${CMAKE_SOURCE_DIR}/src/*.c)
+file(GLOB_RECURSE TEST_FILES ${CMAKE_SOURCE_DIR}/tests/*.c)
+
+# Create the test executable
+add_executable(geometry_tests ${SRC_FILES} ${TEST_FILES})
+
+# Link libraries if needed (e.g., math library)
+target_link_libraries(geometry_tests m)
+
+# Enable testing
+include(CTest)
+add_test(NAME GeometryTests COMMAND geometry_tests)

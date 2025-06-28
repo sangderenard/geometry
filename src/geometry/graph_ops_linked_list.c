@@ -1,8 +1,7 @@
 #include "geometry/graph_ops_linked_list.h"
-#include "geometry/graph_ops.h"
 #include "assembly_backend/memory_ops.h"
 #include <stdlib.h>
-#include "geometry/types.h"
+
 
 // Create an empty list
 static void* ll_create(void) {
