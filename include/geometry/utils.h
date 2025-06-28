@@ -36,6 +36,7 @@ typedef unsigned char boolean;
 #include <stdint.h>
 
 #include "geometry/guardian_platform.h"
+#include "assembly_backend/thread_ops.h"
 
 #include "geometry/dag.h"
 #include "geometry/stencil.h"
@@ -431,10 +432,6 @@ TokenGuardian* guardian_initialize(TokenGuardian* parent, size_t num_threads);
 GuardianToken* guardian_create_pointer_token(TokenGuardian* g, void* ptr, NodeFeatureType type);
 GuardianToken* guardian_create_lock_token(TokenGuardian* g);
 boolean guardian_lock_with_timeout(TokenGuardian* g, GuardianToken guardian_lock_token, int duration, boolean reentrant);
-int guardian_try_lock(TokenGuardian* g, unsigned long lock_token);
-void guardian_lock(TokenGuardian* g, unsigned long lock_token);
-void guardian_unlock(TokenGuardian* g, unsigned long lock_token);
-int guardian_is_locked(TokenGuardian* g, unsigned long lock_token);
 void* guardian_dereference_object(TokenGuardian* g, unsigned long pointer_token);
 
 TokenGuardian* ___guardian_create_internal_(void);

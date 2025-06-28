@@ -3,6 +3,7 @@
 
 #include <stdint.h>
 #include <stddef.h>
+#include "assembly_backend/thread_ops.h"
 
 #ifdef __cplusplus
 extern "C" {
