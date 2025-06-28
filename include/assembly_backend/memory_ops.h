@@ -165,7 +165,8 @@ typedef struct {
 } StructLayout;
 
 // -- CORE FUNCTIONS --
-
+void* instantiate_on_input_cache(NodeFeatureIndex type);
+void* instantiate_on_input_cache(NodeFeatureIndex type, size_t count);
 void* compose_structured_block(const StructLayout* layout, int instance_id, void* user_payload);
 void* mg_encode_block(const void* raw_data, size_t size_bytes, uint16_t type_id, uint8_t flags);
 void* mg_decode_block(const void* encoded_block, size_t* out_payload_size);

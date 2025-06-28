@@ -345,14 +345,14 @@ typedef struct GuardianStencil {
 	GuardianSet stencil_flags; // Set of flags for the stencil
 } GuardianStencil;
 
-enum NodeOrientationNature {
+typedef enum NodeOrientationNature {
 	NODE_ORIENTATION_DOMAIN_PARALLEL = 0, // Parallel to domain
 	NODE_ORIENTATION_FIXED = 1, // Fixed orientation to be set by user
 	NODE_ORIENTATION_ITERATIVE = 2, // Iterative orientation solved by physics engine
 	NODE_ORIENTATION_DOMAIN_TRANSFORM = 3, // Domain transformation
 	NODE_ORIENTATION_SPACE_FILLING_PATTERN = 4, // Space filling orientation (ie tetrahedral, hexahedral, etc. patterns)
     
-};
+} NodeOrientationNature;
 
 typedef struct GuardianStencilSet {
     GuardianParallelList stencils_orthagonalities_orientations; // what are the stencils, their relationships, and orientation modes
@@ -398,9 +398,11 @@ typedef struct GuardianEdge {
 } GuardianEdge;
 
 typedef struct GuardianGeneology {
-    GuardianObjectSet self; // Self-reference for the geneology object
+    GuardianObjectSet* self; // Self-reference for the geneology object
 	int kernel_radius; // Radius of the kernel for cross-stencil node kernels in terms of recursive stencil points
-    GuardianParallelList cross_stencil_node_kernels_correlated_with_edges; // Cross-stencil node kernels correlated with edges
+    GuardianParallelList* cross_stencil_node_kernels_correlated_with_edges; // Cross-stencil node kernels correlated with edges
+	GuardianStencilSet* stencil_set; // Stencil set for the geneology
+	ParametricDomain* domain; // Parametric domain for the geneology
 } GuardianGeneology;
 
 // --- SimpleGraph structure ---
@@ -423,9 +425,9 @@ typedef enum {
 
 // Add missing function prototypes
 TokenGuardian* find_token_authority(TokenGuardian* g);
-TokenGuardian guardian_initialize(TokenGuardian* parent, size_t num_threads);
-GuardianToken guardian_create_pointer_token(TokenGuardian* g, void* ptr, NodeFeatureType type);
-GuardianToken guardian_create_lock_token(TokenGuardian* g);
+TokenGuardian* guardian_initialize(TokenGuardian* parent, size_t num_threads);
+GuardianToken* guardian_create_pointer_token(TokenGuardian* g, void* ptr, NodeFeatureType type);
+GuardianToken* guardian_create_lock_token(TokenGuardian* g);
 boolean guardian_lock_with_timeout(TokenGuardian* g, GuardianToken guardian_lock_token, int duration, boolean reentrant);
 int guardian_try_lock(TokenGuardian* g, unsigned long lock_token);
 void guardian_lock(TokenGuardian* g, unsigned long lock_token);

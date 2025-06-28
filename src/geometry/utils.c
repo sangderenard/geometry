@@ -163,12 +163,52 @@ void neuralnetwork_backwardstep(NeuralNetwork* nn, size_t dag_idx, size_t step_i
 //     GuardianList internal_edges; // List of internal edges (edges that are not exposed to the outside world, but are used internally for node processing
 //     struct Emergence* emergence = NULL;
 // } Node;
+size_t guardian_sizeof(NodeFeatureType type) {
+    switch (type) {
+        case NODE_FEATURE_TYPE_FLOAT:
+            return sizeof(float);
+        case NODE_FEATURE_TYPE_DOUBLE:
+            return sizeof(double);
+        case NODE_FEATURE_TYPE_INT:
+            return sizeof(int);
+        //case NODE_FEATURE_TYPE_UINT:
+        //    return sizeof(unsigned int);
+        case NODE_FEATURE_TYPE_STRING:
+            return sizeof(char*);
+        case NODE_FEATURE_TYPE_BOOLEAN:
+            return sizeof(boolean);
+        case NODE_FEATURE_IDX_HEAP:
+            return sizeof(GuardianHeap);
+        case NODE_FEATURE_IDX_GUARDIAN:
+            return sizeof(TokenGuardian);
+        case NODE_FEATURE_IDX_OBJECT_SET:
+            return sizeof(GuardianObjectSet);
+        case NODE_FEATURE_IDX_POINTER_TOKEN:
+            return sizeof(GuardianPointerToken);
+        case NODE_FEATURE_IDX_LIST:
+            return sizeof(GuardianList);
+        case NODE_FEATURE_IDX_LINKED_LIST:
+            return sizeof(GuardianLinkedList);
 
+        default:
+            return 0; // Unsupported type
+    }
+}
 TokenGuardian * find_token_authority(TokenGuardian *g) {
     if (!g) return NULL;
     if (g->token_host == g) return g; // Found the root guardian
     return find_token_authority(g->token_host); // Recursively find the root guardian
 }//	GuardianParallelList thread_tokens_locks_buffers_threads; // the manager database for threads
+
+GuardianGeneology * guardian_create_geneology(TokenGuardian* g, GuardianStencilSet * stencil_set, NodeOrientationNature * orientation, ParametricDomain * domain) {
+    if (!g) return NULL;
+    GuardianGeneology* geneology = (GuardianGeneology*)instantiate_on_input_cache(NODE_FEATURE_IDX_GENEALOGY);
+    if (!geneology) return NULL;
+    geneology->stencil_set = stencil_set;
+    geneology->domain = domain;
+    geneology->self->guardian = g; // Link the geneology to the guardian
+    return geneology;
+}
 
 TokenGuardian guardian_initialize(TokenGuardian* parent, size_t num_threads) {
     TokenGuardian * g = guardian_global_cache_create(NODE_FEATURE_IDX_GUARDIAN);
@@ -204,21 +244,22 @@ TokenGuardian guardian_initialize(TokenGuardian* parent, size_t num_threads) {
     g->default_stencil_set = guardian_create_stencil_set(g, guardian_create_list(g, guardian_create_stencil(g, RECT_STENCIL_DEFAULT), NODE_FEATURE_IDX_STENCIL, NULL)); // Default stencil set for nodes
     g->default_node_orientation = NODE_ORIENTATION_DOMAIN_PARALLEL; // Default node orientation
     g->default_parametric_domain = parametric_domain_create(3); // Default 3D parametric domain
-    g->default_geneology = guardian_create_geneology(g, g->default_stencil_set, g->default_node_orientation, g.default_parametric_domain);
+    g->default_geneology = guardian_create_geneology(g, g->default_stencil_set, g->default_node_orientation, g->default_parametric_domain);
     g->next_token = id_dispenser();
 }
 
-GuardianToken ___guardian_get_new_token(TokenGuardian* g, int size){
-    if (!g) return (GuardianToken){0};
-    if (g->next_token.token == 0) {
-        // If the token ID is 0, it means the guardian is not initialized properly
-        return (GuardianToken){0};
-	}
+GuardianToken * guardian_get_new_token(TokenGuardian* g, int size){
+    GuardianToken * return_token = instantiate_in_cache(NODE_FEATURE_IDX_TOKEN);
     if (!size || size <= 0) {
         size = 1; // Default size if not specified
     }
-	GuardianToken token = { g->next_token.token++, size }; // Increment the token ID for the next token
-    return token;
+    if (!g) {
+        return_token->token = GUARDIAN_NOT_USED;
+    } else {
+        return_token = guardian_register_in_pool(g, return_token, size);
+        return_token->token = id_dispenser();
+    }
+    return return_token;
 }
 // Generate a token for a pointer without exposing the pointer itself
 GuardianToken * guardian_create_pointer_token(TokenGuardian* g, void* ptr, NodeFeatureType type) {
@@ -239,15 +280,15 @@ GuardianToken * guardian_create_pointer_token(TokenGuardian* g, void* ptr, NodeF
             // Handle error: unable to register pointer token
             return (GuardianToken){0};
         }
-        return pointer_token
+        return pointer_token;
     }
     return token;
 }
 
 GuardianToken guardian_create_lock_token(TokenGuardian* g) {
     if (!g) return (GuardianToken){0};
-    GuardianToken lock_token = ___guardian_get_new_token(g, sizeof(mutex_t));
-    if (lock_token.token == 0) return (GuardianToken){0};
+    GuardianToken * lock_token = guardian_get_new_token(g, sizeof(mutex_t));
+    if (lock_token->token == 0) return (GuardianToken){0};
     mutex_t* mutex = malloc(sizeof(mutex_t));
     if (!mutex) return (GuardianToken){0};
     guardian_mutex_init(mutex);
@@ -369,7 +410,7 @@ boolean guardian_lock_with_timeout(TokenGuardian* g, GuardianToken guardian_lock
 	return true;
 }
 
-GuardianToken ___guardian_register_in_pool_internal_(TokenGuardian* g, GuardianStack unregistered_stack) {
+GuardianToken* guardian_register_in_pool(TokenGuardian* g, GuardianStack* unregistered_stack) {
     if (!g || token.token == 0) return (GuardianToken){0};
     guardian_lock_with_timeout(g->main_lock);
 	boolean success = ___guardian_add_stack_to_pool_internal_(g, unregistered_stack);
@@ -847,7 +888,7 @@ GuardianHeap* ___guardian_create_heap_internal_(TokenGuardian* g) {
 
 GuardianHeap* ___guardian_wrap_heap_internal_(TokenGuardian* g, GuardianHeap* heap, size_t min_allocation) {
     if (!g || !heap) return NULL;
-    heap->guardian = g;
+    heap->self->guardian = g;
     heap->min_allocation = min_allocation;
     heap->max_allocation = g->max_allocation;
     heap->out_heap_stacks = ___guardian_create_list_internal_(g, 0, NODE_FEATURE_TYPE_FLOAT, NULL);

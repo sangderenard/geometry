@@ -9,6 +9,8 @@
 #include <math.h>
 #include <time.h>
 
+const size_t INPUT_CACHE_SIZE = 1024 * 1024 * 1024; // 1 GB
+
 // External assembly encode/decode entry points
 extern void* mg_encode_block_asm(const void* raw_data, size_t size_bytes, uint16_t type_id, uint8_t flags);
 extern void* mg_decode_block_asm(const void* encoded_block, size_t* out_payload_size);
@@ -117,6 +119,72 @@ struct GuardianLinkNode* memops_init_linked_nodes(size_t count) {
         nodes[i].next = (i + 1 < count) ? &nodes[i + 1] : NULL;
     }
     return nodes;
+}
+
+int id = 0; // Global ID counter
+int initialize_id(int* id) {
+    if (!id) return -1;
+    *id = 0; // Initialize to zero
+    return 0; // Return success
+}
+boolean increment_id(int* id) {
+    if (!id) return false;
+    (*id)++;
+    return true;
+}
+int id_dispenser(int* id) {
+    if (!id) return -1;
+    if (*id < 0) {
+        initialize_id(id);
+    }
+    increment_id(id);
+    return *id;
+}   
+
+GuardianHeap * input_cache = NULL;
+void * initialize_input_cache() {
+    input_cache = (GuardianHeap *)mg_raw_create(NODE_FEATURE_IDX_GUARDIAN);
+    if (!input_cache) {
+        // Handle allocation failure
+        return NULL;
+    }
+    return input_cache;
+}
+void * instantiate_on_input_cache_with_count_and_raw_create(NodeFeatureIndex type, size_t count, boolean raw_create) {
+    if (raw_create) {
+        return mg_alloc(guardian_sizeof(type) * count);
+    }
+    if (!input_cache) {
+        input_cache = initialize_input_cache();
+        if (!input_cache) {
+            // Handle allocation failure
+            return NULL;
+        }
+    }
+
+    // Allocate memory for the requested type and count
+    size_t size = sizeof(GuardianObjectSet) * count;
+    GuardianObjectSet* objects = (GuardianObjectSet*)mg_alloc(size);
+    if (!objects) {
+        // Handle allocation failure
+        return NULL;
+    }
+
+    // Initialize each object in the set
+    for (size_t i = 0; i < count; ++i) {
+        objects[i].guardian_pointer_token = NULL; // Placeholder for actual token initialization
+        objects[i].guardian = input_cache; // Set the guardian pointer to the input cache
+        objects[i].guardian_lock_token = NULL; // Placeholder for lock token initialization
+    }
+
+    return objects;
+}
+void * instantiate_on_input_cache_with_count(NodeFeatureIndex type, size_t count) {
+    return instantiate_on_input_cache_with_count_and_raw_create(type, count, false);
+
+}
+void * instantiate_on_input_cache(NodeFeatureIndex type) {
+    return instantiate_on_input_cache_with_count(type, 1);
 }
 
 // Skeletons for expansion
