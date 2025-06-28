@@ -1,7 +1,7 @@
 #ifndef GUARDIAN_LINK_CACHE_H
 #define GUARDIAN_LINK_CACHE_H
 
-#include "guardian_platform.h"
+#include "geometry/guardian_platform_types.h"
 
 #ifdef __cplusplus
 extern "C" {

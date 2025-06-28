@@ -19,10 +19,6 @@ static boolean heap_make_contiguous_force(void* container) {
 }
 
 // Stub implementation for gap inventory operation
-static boolean heap_gap_inventory(void* container, void* obj_set, size_t count) {
-    // TODO: Implement logic to detect gaps in the heap-like container
-    return true;
-}
 
 // Populate only the math_ops sub-struct; other ops remain zero
 const OperationSuite graph_ops_heap = {
@@ -31,7 +27,6 @@ const OperationSuite graph_ops_heap = {
         .make_contiguous_no_wait      = heap_make_contiguous_no_wait,
         .make_contiguous_wait         = heap_make_contiguous_wait,
         .make_contiguous_wait_timeout = heap_make_contiguous_wait_timeout,
-        .make_contiguous_force        = heap_make_contiguous_force,
-        .gap_inventory                = heap_gap_inventory
+        .make_contiguous_force        = heap_make_contiguous_force
     }
 };

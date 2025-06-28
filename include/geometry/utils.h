@@ -27,7 +27,8 @@ extern "C" {
 #include <stddef.h>
 #include <stdint.h>
 
-#include "geometry/guardian_platform.h"
+#include "geometry/guardian_platform_types.h"
+#include "geometry/types.h"
 #include "assembly_backend/thread_ops.h"
 
 #include "geometry/dag.h"

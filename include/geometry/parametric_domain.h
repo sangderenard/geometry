@@ -2,62 +2,12 @@
 #define PARAMETRIC_DOMAIN_H
 
 #include <stddef.h>
-#include <stdbool.h>
-
-#define PD_MAX_DIM 16
+#include "geometry/types.h"
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-typedef enum {
-    PD_BOUNDARY_INCLUSIVE,
-    PD_BOUNDARY_EXCLUSIVE,
-    PD_BOUNDARY_POS_INFINITY,
-    PD_BOUNDARY_NEG_INFINITY
-} BoundaryType;
-
-typedef enum {
-    PD_PERIODIC_NONE,
-    PD_PERIODIC_SIMPLE,
-    PD_PERIODIC_MIRROR,
-    PD_PERIODIC_CYCLIC,
-    PD_PERIODIC_POLARIZED
-} PeriodicityType;
-
-typedef enum {
-    PD_BC_DIRICHLET,
-    PD_BC_NEUMANN,
-    PD_BC_CUSTOM
-} BoundaryConditionType;
-
-typedef struct DiscontinuityNode {
-    double position;
-    BoundaryType type;
-    struct DiscontinuityNode* next;
-    struct DiscontinuityNode* prev;
-} DiscontinuityNode;
-
-typedef struct AxisDescriptor {
-    double start;
-    double end;
-    bool periodic;
-    PeriodicityType periodicity_type;
-    BoundaryType start_boundary;
-    BoundaryType end_boundary;
-
-    BoundaryConditionType bc_type;
-    void (*bc_function)(double*, size_t); // Pointer to BC function
-    DiscontinuityNode* discontinuities;
-
-    double (*extrapolate_neg)(double);
-    double (*extrapolate_pos)(double);
-} AxisDescriptor;
-
-typedef struct ParametricDomain {
-    size_t dim;
-    AxisDescriptor axes[PD_MAX_DIM];
-} ParametricDomain;
 
 ParametricDomain* parametric_domain_create(size_t dimensions);
 void parametric_domain_destroy(ParametricDomain* pd);
