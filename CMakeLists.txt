@@ -1,4 +1,16 @@
 cmake_minimum_required(VERSION 3.10)
+
+# Add clang detection on Windows
+if (WIN32)
+  find_program(CLANG_C_COMPILER clang PATHS "C:/Program Files/LLVM/bin" "C:/LLVM/bin" ENV PATH)
+  find_program(CLANG_CXX_COMPILER clang++ PATHS "C:/Program Files/LLVM/bin" "C:/LLVM/bin" ENV PATH)
+  if (CLANG_C_COMPILER AND CLANG_CXX_COMPILER)
+    message(STATUS "Found Clang: using ${CLANG_C_COMPILER} and ${CLANG_CXX_COMPILER}")
+    set(CMAKE_C_COMPILER "${CLANG_C_COMPILER}" CACHE FILEPATH "C compiler" FORCE)
+    set(CMAKE_CXX_COMPILER "${CLANG_CXX_COMPILER}" CACHE FILEPATH "C++ compiler" FORCE)
+  endif()
+endif()
+
 project(geometry)
 
 set(CMAKE_CXX_STANDARD 17)
@@ -75,26 +87,36 @@ target_link_libraries(linked_list_creation_test geometry)
 add_test(NAME linked_list_creation_test COMMAND linked_list_creation_test)
 
 # Additional configuration for GeometryTests
-project(GeometryTests)
-
-# Set the C standard
+## C and C++ standards
 set(CMAKE_C_STANDARD 99)
 set(CMAKE_C_STANDARD_REQUIRED ON)
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-# Include directories
-include_directories(${CMAKE_SOURCE_DIR}/src)
-include_directories(${CMAKE_SOURCE_DIR}/tests)
+## Include paths
+include_directories(
+  ${CMAKE_SOURCE_DIR}/include
+  ${CMAKE_SOURCE_DIR}/src
+  ${CMAKE_SOURCE_DIR}/tests
+)
 
-# Add source files
-file(GLOB_RECURSE SRC_FILES ${CMAKE_SOURCE_DIR}/src/*.c)
-file(GLOB_RECURSE TEST_FILES ${CMAKE_SOURCE_DIR}/tests/*.c)
-
-# Create the test executable
-add_executable(geometry_tests ${SRC_FILES} ${TEST_FILES})
-
-# Link libraries if needed (e.g., math library)
-target_link_libraries(geometry_tests m)
-
-# Enable testing
+## Combined tests executable
+file(GLOB_RECURSE TEST_SOURCES
+  ${CMAKE_SOURCE_DIR}/tests/*.c
+)
+add_executable(geometry_tests ${TEST_SOURCES})
+target_link_libraries(geometry_tests geometry m)
 include(CTest)
 add_test(NAME GeometryTests COMMAND geometry_tests)
+
+# Add resource compiler detection for Ninja/Clang on Windows
+if (WIN32)
+  # If no RC compiler found, try to locate rc.exe from Windows SDK
+  if (NOT CMAKE_RC_COMPILER)
+    find_program(RC_COMPILER rc.exe HINTS "C:/Program Files (x86)/Windows Kits/10/bin" ENV PATH)
+    if (RC_COMPILER)
+      message(STATUS "Found RC compiler: ${RC_COMPILER}")
+      set(CMAKE_RC_COMPILER "${RC_COMPILER}" CACHE FILEPATH "Resource Compiler" FORCE)
+    endif()
+  endif()
+endif()

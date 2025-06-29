@@ -107,7 +107,44 @@ void* memops_span_get_data(const MemSpanHeader* header) {
     if (!header) return NULL;
     return (void*)((const uint8_t*)header + sizeof(MemSpanHeader));
 }
+GuardianDict* global_pointer_dict = NULL;
+void * memops_get_pointer_from_token(GuardianPointerToken* token) {
+    if (!token) return NULL;
 
+    if (!global_pointer_dict) {
+        global_pointer_dict = instantiate_on_input_cache(NODE_FEATURE_IDX_DICTIONARY);
+        if (!global_pointer_dict) {
+            // Handle allocation failure
+            return NULL;
+        }
+
+        graph_ops_dictionary.set(token, global_pointer_dict);
+    } else {
+        void* return_pointer = graph_ops_dictionary.get(token);
+        if (!return_pointer) {
+            // Handle error: dictionary not found for the token
+            return NULL;
+        }
+        return return_pointer; // Assuming values contain the pointers
+    }
+}   
+
+boolean memops_set_prev_on_link(GuardianPointerToken* node, GuardianPointerToken* prev) {
+    if (!node) return false;
+
+    GuardianLinkNode* actual_node = memops_get_pointer_from_token(node);
+    if (!actual_node) return false;
+    actual_node->prev = prev;
+    return true;
+}
+boolean memops_set_next_on_link(GuardianPointerToken* node, GuardianPointerToken* next) {
+    if (!node) return false;
+
+    GuardianLinkNode* actual_node = memops_get_pointer_from_token(node);
+    if (!actual_node) return false;
+    actual_node->next = next;
+    return true;
+}
 struct GuardianLinkNode* memops_init_linked_nodes(size_t count) {
     if (count == 0) return NULL;
     size_t total_size = sizeof(GuardianLinkNode) * count;

@@ -10,7 +10,7 @@
   #define GUARDIAN_PLATFORM_POSIX 1
 #endif
 
-#include "geometry/types.h"
+
 
 #if GUARDIAN_PLATFORM_WINDOWS
   #include <windows.h>
