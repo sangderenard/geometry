@@ -3,7 +3,8 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stdint.h>
-
+#include "geometry/graph_ops_handler.h"
+#include "geometry/types.h"
 
 // === Node Data Structures ===
 

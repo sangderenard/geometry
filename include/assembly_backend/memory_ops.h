@@ -167,9 +167,13 @@ typedef struct {
 } StructLayout;
 
 // -- CORE FUNCTIONS --
-void* instantiate_on_input_cache(NodeFeatureIndex type);
-void* instantiate_on_input_cache(NodeFeatureIndex type, size_t count);
-void* compose_structured_block(const StructLayout* layout, int instance_id, void* user_payload);
+
+void ** apply_mask(void **array, const int **mask, size_t count, int invert_mask);
+GuardianObjectSet* instantiate_on_input_cache(NodeFeatureIndex type);
+GuardianObjectSet** instantiate_on_input_cache_with_count(NodeFeatureIndex type, size_t count);
+GuardianObjectSet** instantiate_on_input_cache_with_count_and_raw_create(NodeFeatureIndex type, size_t count, boolean raw_create);
+void ** mg_bulk_initialize(void *ptr, NodeFeatureIndex type, size_t count);
+void* compose_structured_block(const StructLayout* layout, int instance_id, void* user_payload, const MemSpanHeader* default_header);
 void* mg_encode_block(const void* raw_data, size_t size_bytes, uint16_t type_id, uint8_t flags);
 void* mg_decode_block(const void* encoded_block, size_t* out_payload_size);
 void* mg_tensor_compare(const void* block_a, const void* block_b);

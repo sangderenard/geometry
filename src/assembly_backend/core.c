@@ -15,11 +15,11 @@ void mg_free(void* ptr) {
 }
 typedef struct GuardianLinkNode GuardianLinkNode;
 
-void* mg_link_factory(long long id, size_t size, int count, void* template, void* field_functions) {
+void* mg_link_factory(long long id, size_t wrapper_size, size_t size, int count, void* template, void* field_functions) {
 
     //algorithm to determine the size of all links data plus links plus projected space for dyanmica allotment according to the initial state of the memory block header properties defining such
 
-    size_t total_size = sizeof(&((GuardianLinkNode*)(template))) * count + size * count;
+    size_t total_size = wrapper_size * count + size * count;
 
     return NULL;
 }

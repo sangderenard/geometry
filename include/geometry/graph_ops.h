@@ -6,7 +6,7 @@ extern "C" {
 #endif
 
 #include "geometry/types.h"
-#include <stddef.h>
+
 
 /* Array of pointers to implementations for each suite type */
 extern const OperationSuite* const OperationSuites[];

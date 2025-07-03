@@ -3,6 +3,9 @@
 #include "assembly_backend/simd/simd_dispatch.h"
 #include "assembly_backend/simd/memory_intrinsics.h"
 #include "geometry/guardian_platform.h"
+#include "geometry/types.h"
+#include "geometry/graph_ops_handler.h"
+#include "geometry/graph_ops_dictionary.h"
 #include "geometry/utils.h"
 #include <stddef.h>
 #include <stdint.h>
@@ -28,9 +31,26 @@ void* mg_tensor_compare(const void* block_a, const void* block_b) {
     return NULL;
 }
 
-// Wrapper to inject NULL as default_header
-void* compose_structured_block(const StructLayout* layout, int instance_id, void* user_payload) {
-    return compose_structured_block(layout, instance_id, user_payload, NULL);
+void ** mg_bulk_initialize(void *ptr, NodeFeatureIndex type, size_t count) {
+    if (!ptr || count == 0) return NULL;
+
+    GuardianObjectSet** objects = (GuardianObjectSet**)ptr;
+    // USE INTRINSICS TO INITIALIZE OBJECTS ASAP
+    return (void**)objects;
+}
+
+void ** apply_mask(void **array, const int **mask, size_t count, int invert_mask) {
+    if (!array || !mask || count == 0) return NULL;
+
+    size_t j = 0;
+    for (size_t i = 0; i < count; ++i) {
+        if ((invert_mask && !(*mask)[i]) || (!invert_mask && (*mask)[i])) {
+            array[j++] = array[i];
+        } else {
+            array[i] = NULL; // Clear the pointer if it doesn't match the mask
+        }
+    }
+    return array;
 }
 
 // Full implementation from original
@@ -117,10 +137,10 @@ void * memops_get_pointer_from_token(GuardianPointerToken* token) {
             // Handle allocation failure
             return NULL;
         }
-
-        graph_ops_dictionary.set(token, global_pointer_dict);
+        
+        graph_ops_dictionary.set(global_pointer_dict, token->token, global_pointer_dict);
     } else {
-        void* return_pointer = graph_ops_dictionary.get(token);
+        void* return_pointer = graph_ops_dictionary.get(global_pointer_dict, token->token);
         if (!return_pointer) {
             // Handle error: dictionary not found for the token
             return NULL;
@@ -187,7 +207,20 @@ void * initialize_input_cache() {
     }
     return input_cache;
 }
-void * instantiate_on_input_cache_with_count_and_raw_create(NodeFeatureIndex type, size_t count, boolean raw_create) {
+
+void** bulk_initialize_objects(void* storage_location, NodeFeatureIndex type, size_t count) {
+    // actual creation of objects should be done in bulk when possible
+    if (!storage_location || count == 0) return NULL;
+    void** objects = (void**)storage_location;
+    objects = mg_bulk_initialize(objects, type, count); // Initialize memory to zero
+    if (!objects) {
+        // Handle allocation failure
+        return NULL;
+    }
+    return objects;
+}
+
+void ** instantiate_on_input_cache_with_count_and_raw_create(NodeFeatureIndex type, size_t count, boolean raw_create) {
     if (raw_create) {
         return mg_alloc(guardian_sizeof(type) * count);
     }
@@ -207,20 +240,19 @@ void * instantiate_on_input_cache_with_count_and_raw_create(NodeFeatureIndex typ
         return NULL;
     }
 
-    // Initialize each object in the set
-    for (size_t i = 0; i < count; ++i) {
-        objects[i].guardian_pointer_token = NULL; // Placeholder for actual token initialization
-        objects[i].guardian = input_cache; // Set the guardian pointer to the input cache
-        objects[i].guardian_lock_token = NULL; // Placeholder for lock token initialization
-    }
+    objects = mg_bulk_initialize(objects, type, count); // Initialize memory to zero
 
     return objects;
 }
-void * instantiate_on_input_cache_with_count(NodeFeatureIndex type, size_t count) {
-    return instantiate_on_input_cache_with_count_and_raw_create(type, count, false);
+GuardianObjectSet ** instantiate_on_input_cache_with_count(NodeFeatureIndex type, size_t count) {
+    void ** return_objects = instantiate_on_input_cache_with_count_and_raw_create(type, count, false);
+    for(size_t i = 0; i < count; ++i) {
+        GuardianObjectSet * obj = (GuardianObjectSet *)return_objects[i];
+
+    }
 
 }
-void * instantiate_on_input_cache(NodeFeatureIndex type) {
+GuardianObjectSet * instantiate_on_input_cache(NodeFeatureIndex type) {
     return instantiate_on_input_cache_with_count(type, 1);
 }
 

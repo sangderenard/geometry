@@ -44,13 +44,8 @@ typedef struct {
 // duplicate includes of <stddef.h> and <stdint.h> removed
 
 #include "geometry/guardian_platform_types.h"
-#include "assembly_backend/thread_ops.h"
 
-#include "geometry/dag.h"
-#include "geometry/stencil.h"
-#include "geometry/parametric_domain.h"
-#include "geometry/graph_ops.h"
-#include "geometry/graph_ops_handler.h"
+typedef struct ParametricDomain ParametricDomain;
 
 /* Forward declarations for types used before definition */
 typedef struct GuardianList GuardianList;
@@ -168,7 +163,7 @@ typedef unsigned long long NodeFeatureType;
 #define NODE_FEATURE_TYPE_PATTERN_PALETTE_STREAM (NODE_CATEGORY_ENCODING | NODE_FEATURE_IDX_PATTERN_PALETTE_STREAM)
 #define NODE_FEATURE_TYPE_ENCODING_ENGINE (NODE_CATEGORY_ENCODING | NODE_FEATURE_IDX_ENCODING_ENGINE)
 #define NODE_FEATURE_TYPE_COUNT NODE_FEATURE_IDX_COUNT
-#define NODE_FEATURE_TYPE_MUTEX_T (NODE_CATEGORY_GUARDIAN | NODE_FEATURE_IDX_MUTEX_T
+#define NODE_FEATURE_TYPE_MUTEX_T (NODE_CATEGORY_GUARDIAN | NODE_FEATURE_IDX_MUTEX_T)
 
 typedef struct Emergence {  
     // Statistics  
@@ -273,9 +268,17 @@ typedef struct GuardianMailbox {
     boolean is_contiguous; // Flag for whether the mailbox is contiguous
     boolean is_synchronized; // Flag for whether the mailbox is synchronized
 } GuardianMailbox;
-const long long GUARDIAN_NOT_USED = LLONG_MAX; // Constant for unused guardian
+extern const long long GUARDIAN_NOT_USED; // Constant for unused guardian
+typedef enum {
+    GUARDIAN_OPERATOR_TYPE_NONE = 0,
+    GUARDIAN_OPERATOR_TYPE_READ = 1,
+    GUARDIAN_OPERATOR_TYPE_WRITE = 2,
+    GUARDIAN_OPERATOR_TYPE_EXECUTE = 3,
+    GUARDIAN_OPERATOR_TYPE_SWAP = 4,
+} GuardianOperatorType;
 typedef struct GuardianThread {
-    GuardianObjectSet self; // Self-reference for the thread object
+    GuardianObjectSet * self; // Self-reference for the thread object
+    GuardianOperatorType operator_type; // Type of operator for this thread
     size_t thread_id; // Unique identifier for the thread
     size_t stack_size; // Size of the stack allocated for this thread
     size_t max_stack_size; // Maximum size of the stack for this thread
@@ -284,6 +287,7 @@ typedef struct GuardianThread {
     double allocation_growth_factor; // Growth factor for memory allocation
     double priority; // Priority for scheduling or processing
     double patience; // Patience for waiting on resources
+    
     GuardianSet * mailbox; // Set of messages in the thread's mailbox
     GuardianMessage * message_head; // Pointer to the head of the message queue
     GuardianMessage * message_tail; // Pointer to the tail of the message queue
@@ -484,7 +488,7 @@ typedef struct Subedge {
     EdgeAttribute attribute;
     GuardianMap poles_functions_map; // Map of poles to function flows to poles, bidirectional reference
     GuardianList effective_subedges; // List of effective subedges
-};
+} Subedge;
 
 typedef struct EdgeType {
     char* identifier; // Unique identifier for the edge type
@@ -517,7 +521,55 @@ typedef struct GuardianSimpleGraph {
 
 } GuardianSimpleGraph;
 
+typedef struct {
+    int dx, dy, dz;   // Offset from center
+    double weight;    // Weight for this point
+} StencilPoint;
 
+typedef struct {
+    StencilPoint* points;
+    size_t count;
+} Stencil;
+
+
+typedef struct {
+    int* offsets;      // [dims] array: e.g. {dx, dy, dz, ...}
+    size_t dims;       // Number of dimensions
+    double weight;     // Weight for this pole
+} StencilPole;
+
+// Common rectangular stencil variants
+typedef enum {
+    // Default axis-aligned cross (6 point in 3D, 5 point in 2D, etc.)
+    RECT_STENCIL_DEFAULT = 0,
+    // Axis-aligned neighbours only (2*d points)
+    RECT_STENCIL_AXIS_ALIGNED,
+    // Axis-aligned neighbours plus centre (2*d + 1)
+    RECT_STENCIL_AXIS_ALIGNED_WITH_CENTER,
+    // Full box without centre ( (2*radius+1)^d - 1 )
+    RECT_STENCIL_FULL,
+    // Full box including centre ( (2*radius+1)^d )
+    RECT_STENCIL_FULL_WITH_CENTER,
+    // Classical 14 point stencil in 3D (axis + face diagonals)
+    RECT_STENCIL_14_POINT_3D,
+    // 24-cell vertices in 4D (\u00b11,\u00b11,0,0 permutations)
+    RECT_STENCIL_24_CELL_4D
+} RectangularStencilType;
+typedef struct StencilStateResolver StencilStateResolver;
+typedef struct GeneralStencil {
+    StencilPole* poles;
+    size_t count;
+    size_t dims;
+    // Optional: reference to a state resolver for iterative equilibrium
+    StencilStateResolver* resolver;
+    void* resolver_data;
+} GeneralStencil;
+typedef struct StencilStateResolver {
+    // Function pointer for resolving the state of a stencil
+    GeneralStencil *  (*resolve)(struct GeneralStencil* stencil, struct Node* node, void* data);
+    // Optional user data for the resolver
+    void* params;
+} StencilStateResolver;
 
 /* ======================= */
 /* Parametric Domain Types */
@@ -677,11 +729,12 @@ typedef void*   (*OpShiftFn)(void* container);
 typedef void    (*OpUnshiftFn)(void* container, void* element);
 typedef void    (*OpInsertFn)(void* container, size_t index, void* element);
 typedef void*   (*OpRemoveFn)(void* container, size_t index);
-typedef void*   (*OpGetFn)(void* container, size_t index);
-typedef void    (*OpSetFn)(void* container, size_t index, void* element);
+typedef void*   (*OpGetFn)(void* container, void* id);
+typedef void    (*OpSetFn)(void* container, void* id, void* element);
 typedef size_t  (*OpSizeFn)(const void* container);
 typedef void    (*OpSortFn)(void* container, int (*cmp)(const void*, const void*));
 typedef void*   (*OpSearchFn)(void* container, int (*pred)(const void*, void*), void* user_data);
+typedef size_t (*OpIndexOfFn)(const void* container, void* element); // indexOf function pointer
 typedef void    (*OpSliceFn)(void* container, size_t start, size_t end, void** out_array);
 typedef void    (*OpStencilFn)(void* container, const size_t* indices, size_t count, void** out_array);
 typedef void    (*OpForEachFn)(void* container, void (*fn)(void* element, void* user_data), void* user_data);
@@ -838,6 +891,7 @@ typedef struct {
 
     OpSortFn       sort;
     OpSearchFn     search;
+    OpIndexOfFn    index_of;  // indexOf function pointer
     OpSliceFn      slice;
     OpStencilFn    stencil;
     OpForEachFn    for_each;
