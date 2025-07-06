@@ -671,6 +671,13 @@ if __name__ == "__main__":
             "explore30xRMS_AdamW"],
         default=None,
         help='Convenience presets for common experiments')
+    parser.add_argument('--global_list_size', type=int, default=10,
+                    help='Size of the global best logits list')
+    parser.add_argument('--global_frac', type=float, default=0.0,
+                    help='Fraction of population to seed from global best logits')
+    parser.add_argument('--roll_global_images', action='store_true',
+                    help='Cycle through all global best images if set')
+
     args, unknown = parser.parse_known_args()
     display_mode = args.display.replace('-', '_')
 
@@ -861,6 +868,8 @@ if __name__ == "__main__":
 
     global_best_loss = float('inf')
     global_best_state = {}
+    global_best_state['mem_logits'] = None
+    global_best_state['cycle_ptr'] = 0
 
     import random
     # Sympy parsing utility
@@ -889,34 +898,36 @@ if __name__ == "__main__":
         return logits + torch.randn_like(logits) * std
 
     def image_sequence():
-        global global_best_loss, global_best_state
+        global global_best_state
         population_size = model.mem_logits_batch.shape[0]
+        global_frac = args.global_frac
         elite_frac = 0.25
         random_frac = 0.1
         freeze_counter = torch.zeros(population_size, dtype=torch.long, device=device)
-        # --- Separate accumulators for logits and net ---
+
         logits_grad_accum = logits_grad_accum_fn(epoch=0, step=0, batch=0, batch_size=population_size, grad_accum=1, substep=0)
         logits_accum_steps = int(logits_grad_accum)
-        logits_accum_loss = 0.0
         logits_accum_count = 0
+
         net_grad_accum = net_grad_accum_fn(epoch=0, step=0, batch=0, batch_size=population_size, grad_accum=1, substep=0)
         net_accum_steps = int(net_grad_accum)
-        net_accum_loss = 0.0
         net_accum_count = 0
+
         epoch = 0
         substep = 0
-        # --- CUDA stream for overlapping datapath ---
+
         stream = torch.cuda.Stream() if device.type == 'cuda' else None
         autocast_enabled = args.autocast and device.type == 'cuda'
         scaler = torch.amp.GradScaler('cuda', enabled=autocast_enabled)
+
         for step in range(args.steps):
-            # Progressive epoch tick for mutation schedule
             if step % population_size == 0 and step > 0:
                 epoch += 1
-            # --- Compute annealed lr, mutation std, grad clip, grad accum for each group ---
+
             logits_lr = logits_lr_fn(epoch=epoch, step=step, batch=step, batch_size=population_size, grad_accum=logits_accum_steps, substep=substep)
             logits_grad_clip = logits_grad_clip_fn(epoch=epoch, step=step, batch=step, batch_size=population_size, grad_accum=logits_accum_steps, substep=substep)
             new_logits_accum = logits_grad_accum_fn(epoch=epoch, step=step, batch=step, batch_size=population_size, grad_accum=logits_accum_steps, substep=substep)
+
             if int(new_logits_accum) != logits_accum_steps:
                 logits_accum_steps = int(new_logits_accum)
                 logits_accum_count = 0
@@ -926,6 +937,7 @@ if __name__ == "__main__":
             net_lr = net_lr_fn(epoch=epoch, step=step, batch=step, batch_size=population_size, grad_accum=net_accum_steps, substep=substep)
             net_grad_clip = net_grad_clip_fn(epoch=epoch, step=step, batch=step, batch_size=population_size, grad_accum=net_accum_steps, substep=substep)
             new_net_accum = net_grad_accum_fn(epoch=epoch, step=step, batch=step, batch_size=population_size, grad_accum=net_accum_steps, substep=substep)
+
             if int(new_net_accum) != net_accum_steps:
                 net_accum_steps = int(new_net_accum)
                 net_accum_count = 0
@@ -935,15 +947,11 @@ if __name__ == "__main__":
 
             mutation_std = mutation_fn(epoch=epoch, step=step, batch=step, batch_size=population_size, grad_accum=logits_accum_steps, substep=substep)
 
-            # --- Zero grads for each group as needed ---
             if logits_accum_count == 0:
                 logits_optimizer.zero_grad(set_to_none=True)
             if net_optimizer and net_accum_count == 0:
                 net_optimizer.zero_grad(set_to_none=True)
 
-            # ──────────────────────────────────────────────────────────────
-            #  Overlap datapath: enqueue from_logits on CUDA stream
-            # ──────────────────────────────────────────────────────────────
             if autocast_enabled:
                 autocast_ctx = torch.amp.autocast('cuda')
             else:
@@ -961,166 +969,277 @@ if __name__ == "__main__":
                     torch._C._get_tracing_state().attn_micro = args.attn_micro
                 except AttributeError:
                     pass
-
-            # --- CPU-side work (mutation, bookkeeping, etc.) can go here if needed ---
-
             if stream is not None:
-                stream.synchronize()  # Ensure forward is done before backward
+                stream.synchronize()
 
             inter_pen_batch, intra_pen_batch, mem_ranks_batch, sampled_ops_batch, op_logprobs_batch, mem_logprobs_batch = forward_out
             loss_batch = inter_pen_batch + intra_pen_batch
-            base_loss   = (- loss_batch * (op_logprobs_batch + mem_logprobs_batch)).mean()
+            base_loss = (- loss_batch * (op_logprobs_batch + mem_logprobs_batch)).mean()
 
-            # scale once for logits, later rescale net grads in-place
             loss_scaled = base_loss / logits_accum_steps
             scaler.scale(loss_scaled).backward()
 
-            # if the two groups use different accum_steps, rescale net grads
             if net_optimizer and net_accum_steps != logits_accum_steps:
-                scale = logits_accum_steps / net_accum_steps   # e.g. 2/1 doubles net grads
+                scale = logits_accum_steps / net_accum_steps
                 with torch.no_grad():
                     for p in net_params:
                         if p.grad is not None:
                             p.grad.mul_(scale)
 
             logits_accum_count += 1
-            net_accum_count    += 1  # we always produced grads for both
+            net_accum_count += 1
 
-            # ── clip+step only when each group hit its accumulation quota ──
             if logits_accum_count >= logits_accum_steps:
                 if logits_grad_clip is not None:
                     torch.nn.utils.clip_grad_norm_(logits_params, logits_grad_clip)
-                scaler.step(logits_optimizer); scaler.update()
+                scaler.step(logits_optimizer)
+                scaler.update()
                 logits_optimizer.zero_grad(set_to_none=True)
                 logits_accum_count = 0
 
             if net_optimizer and net_accum_count >= net_accum_steps:
                 if net_grad_clip is not None:
                     torch.nn.utils.clip_grad_norm_(net_params, net_grad_clip)
-                scaler.step(net_optimizer); scaler.update()
+                scaler.step(net_optimizer)
+                scaler.update()
                 net_optimizer.zero_grad(set_to_none=True)
                 net_accum_count = 0
                 substep += 1
 
-            # Find best index in this batch
-            best_idx = torch.argmin(loss_batch).item()
-            mem_ranks_best = mem_ranks_batch[best_idx]
-            sampled_ops_best = sampled_ops_batch[best_idx]
+            # Compute batch losses and select top-k lowest indices
+            batch_losses = loss_batch.detach().cpu()
+            sorted_losses, sorted_idxs = torch.sort(batch_losses)
+            low_n = min(3, sorted_losses.numel())
+            gl_n = max(1, args.global_list_size)
+            better = sorted_idxs[:gl_n]
+            best_idx = better[0].item()
+            # Keep other top-k as improved indices
+            
+            
 
-            addr_map_best = {int(model.all_ids[i]): int(mem_ranks_best[i].cpu())
-                            for i in range(len(model.all_ids))}
-            sampled_targets = model.op_targets[sampled_ops_best]
-            temporal_usage_best = {int(sampled_targets[i].cpu()): i for i in range(sampled_targets.shape[0])}
-            max_time_best = max(1, max(temporal_usage_best.values(), default=0))
+            # --- Preallocate default containers
+            addr_maps = [{} for _ in range(batch_size)]
+            temporal_usages = [{} for _ in range(batch_size)]
+            max_times = [1 for _ in range(batch_size)]
+            operations = [[] for _ in range(batch_size)]
 
-            # Build pseudo operations on demand for drawing lines
             operations_best = []
-            for op_idx in sampled_ops_best:
-                tgt_id  = int(model.op_targets[op_idx])
-                dst_addr= int(mem_ranks_best[tgt_id])
-                raw_src = model.op_sources[op_idx]
-                real_src= [(int(s), int(mem_ranks_best[int(s)]))
-                           for s in raw_src if s >= 0]          # drop -1
-                op_tag  = "+=C" if len(real_src)==1 else "+=A*B"
-                operations_best.append((op_tag, (tgt_id, dst_addr), real_src))
-                # Validate that sources map to the correct matrices
-                for tag, (_, _), srcs in operations_best:
-                    if tag == '+=C':
-                        # bias op: single source must come from C (matrix id 2)
-                        assert len(srcs) == 1 and matrix_of[srcs[0][0]] == 2, \
-                            f"Expected C-source for bias, got {srcs}"
-                    else:
-                        # multiply op: sources must be A then B (ids 0 and 1)
-                        assert len(srcs) == 2 and matrix_of[srcs[0][0]] == 0 and matrix_of[srcs[1][0]] == 1, \
-                            f"Expected A then B sources for multiply, got {srcs}"
+            addr_map_best = {}
+            temporal_usage_best = {}
+            max_time_best = 1
 
-            # Now update global best
-            if loss_batch[best_idx].item() < global_best_loss:
-                global_best_loss = loss_batch[best_idx].item()
-                global_best_state['addr_map'] = addr_map_best
-                global_best_state['temporal_usage'] = temporal_usage_best
-                global_best_state['max_time'] = max_time_best
-                if display_mode in ('side_by_side', 'best_only'):
-                    global_best_state['img_best'] = generate_overlay_image(
-                        addr_map_best, operations_best, logical_order, D_ids,
-                        hsv_config=hsv_config,
-                        border_hsv_config=border_hsv_config,
-                        temporal_usage=temporal_usage_best,
-                        max_time=max_time_best
-                    )
+            for b in range(batch_size):
+                # only fill for best or those in top-k better list
+                if b == best_idx or b in better:
+                    mem_ranks = mem_ranks_batch[b]
+                    op_indices = sampled_ops_batch[b]
 
-            # --- Genetic replacement: replace worst with mutated elite or random, freeze elite for N rounds ---
-            # ----------------------------------------------
-            # torch-only genetic step (no Python loops)
-            # ----------------------------------------------
-            with torch.no_grad():
-                fitness = loss_batch                                # (B,)
-                elite_n   = max(1, int(population_size * elite_frac))
-                random_n  = max(1, int(population_size * random_frac))
+                    # build addr_map for this sample
+                    addr_map_b = {int(model.all_ids[i]): int(mem_ranks[i].cpu()) for i in range(len(model.all_ids))}
+                    sampled_targets_b = model.op_targets[op_indices]
+                    temporal_usage_b = {int(sampled_targets_b[i].cpu()): i for i in range(sampled_targets_b.shape[0])}
+                    max_time_b = max(1, max(temporal_usage_b.values(), default=0))
 
-                # ── rank population ─────────────────────────
-                elite_val, elite_idx = torch.topk(-fitness, elite_n, largest=True)
+                    # store in conservative lists
+                    addr_maps[b] = addr_map_b
+                    temporal_usages[b] = temporal_usage_b
+                    max_times[b] = max_time_b
 
-                # ── update freeze counters ──────────────────
-                freeze_rounds = int(elite_freeze_fn(
-                    epoch=epoch, step=step, batch=step,
-                    batch_size=population_size,
-                    grad_accum=logits_accum_steps,
-                    substep=substep))
-                new_freeze = torch.zeros_like(freeze_counter)
-                new_freeze[elite_idx] = freeze_rounds
-                freeze_counter = torch.maximum(freeze_counter - 1, new_freeze)
+                    # build operations for this sample
+                    operations_b = []
+                    for op_idx in op_indices:
+                        tgt_id = int(model.op_targets[op_idx])
+                        tgt_addr = int(mem_ranks[tgt_id].item())
+                        src_ids = [int(s) for s in model.op_sources[op_idx] if s >= 0]
+                        src_addrs = [(sid, int(mem_ranks[sid].item())) for sid in src_ids]
+                        tag = "+=C" if len(src_ids) == 1 else "+=A*B"
+                        operations_b.append((tag, (tgt_id, tgt_addr), src_addrs))
 
-                # ── choose rows that may be replaced ────────
-                not_frozen = torch.nonzero(freeze_counter == 0, as_tuple=True)[0]
-                n_mutate   = max(not_frozen.numel() - random_n, 0)
+                    operations[b] = operations_b
 
-                # ── mutation from elite parents ─────────────
-                if n_mutate > 0:
-                    parent_rows = elite_idx[torch.randint(elite_n, (n_mutate,), device=device)]
-                    noise       = torch.randn((n_mutate, model.num_elements), device=device) * mutation_std
-                    model.mem_logits_batch.index_copy_(0, not_frozen[:n_mutate], 
-                                                    model.mem_logits_batch[parent_rows] + noise)
+                    # separately track best
+                    if b == best_idx:
+                        operations_best = operations_b
+                        addr_map_best = addr_map_b
+                        temporal_usage_best = temporal_usage_b
+                        max_time_best = max_time_b
 
-                # ── random re-seed rows  ────────────────────
-                if random_n > 0 and not_frozen.numel() >= random_n:
-                    rand_rows = not_frozen[-random_n:]
-                    model.mem_logits_batch[rand_rows] = torch.randn((random_n, model.num_elements), device=device)
+
+            # Reinsert your operation assertions
+            for tag, (_, _), srcs in operations_best:
+                if tag == '+=C':
+                    assert len(srcs) == 1 and matrix_of[srcs[0][0]] == 2, f"Expected C-source for bias, got {srcs}"
                 else:
-                    rand_rows = torch.tensor([], dtype=torch.long, device=device)
+                    assert len(srcs) == 2 and matrix_of[srcs[0][0]] == 0 and matrix_of[srcs[1][0]] == 1, f"Expected A then B sources, got {srcs}"
+            # ──────────────────────────────────────────────────────────────
+            # Freeze elites + genetic replacement + safe Adam
+            # ──────────────────────────────────────────────────────────────
+            elite_freeze = int(elite_freeze_fn(
+                epoch=epoch, step=step, batch=step, batch_size=population_size,
+                grad_accum=logits_accum_steps, substep=substep
+            ))
+            n_elite = max(1, int(population_size * elite_frac))
+            n_global = max(0, int(population_size * global_frac))
+            n_random = max(0, int(population_size * random_frac))
 
-                # ── clear Adam moments for *all* changed rows
-                adam_state = logits_optimizer.state.get(model.mem_logits_batch, None)
-                mutated_rows = torch.cat((not_frozen[:n_mutate], rand_rows)) if rand_rows.numel() else not_frozen[:n_mutate]
-                if adam_state is not None and mutated_rows.numel():
-                    if 'exp_avg' in adam_state:
-                        adam_state['exp_avg'][mutated_rows]  = 0
-                        adam_state['exp_avg_sq'][mutated_rows] = 0
-                    if 'step' in adam_state:
-                        if isinstance(adam_state['step'], torch.Tensor):
-                            adam_state['step'].zero_()
-                        else:
-                            adam_state['step'] = 0
+            # Rank by loss
+            _, ranked_indices = torch.sort(batch_losses)
+            elite_indices = ranked_indices[:n_elite]
 
+            # Decrement freeze counters
+            freeze_counter -= 1
+            freeze_counter.clamp_(min=0)
+            freeze_counter[elite_indices] = elite_freeze
 
-            # Build current image only if display mode requires it
+            logits_cpu = model.mem_logits_batch.detach().cpu()
+            global_pool = len(global_best_state.get('mem_logits', [])) if global_best_state is not None and global_best_state.get('mem_logits', []) is not None else 0
+            g_cursor = 0
+
+            # clear optimizer state slots on unfreeze
+            if hasattr(logits_optimizer, 'state'):
+                state_entry = logits_optimizer.state.get(model.mem_logits_batch, None)
+            else:
+                state_entry = None
+
+            for i in range(population_size):
+                if freeze_counter[i] > 0:
+                    continue  # still frozen
+                # reset optimizer state slice for newly thawed
+                if state_entry is not None:
+                    for key in state_entry:
+                        if isinstance(state_entry[key], torch.Tensor):
+                            if state_entry is not None:
+                                for key in state_entry:
+                                    val = state_entry[key]
+                                    if isinstance(val, torch.Tensor) and val.dim() > 0 and val.size(0) > i:
+                                        val[i].zero_()
+                            else:
+                                print(f"[WARNING] No optimizer state for logits {model.mem_logits_batch} in optimizer {logits_optimizer}")
+
+                # genetic replacement
+                r = random.random()
+                if r < random_frac:
+                    logits_cpu[i].normal_()
+                elif r < random_frac + global_frac and global_pool > 0:
+                    src = global_best_state['mem_logits'][g_cursor % global_pool]
+                    logits_cpu[i].copy_(mutate_logits(src, std=mutation_std))
+                    g_cursor += 1
+                else:
+                    elite_src_idx = elite_indices[random.randint(0, n_elite - 1)]
+                    logits_cpu[i].copy_(mutate_logits(logits_cpu[elite_src_idx], std=mutation_std))
+
+            with torch.no_grad():
+                model.mem_logits_batch.copy_(logits_cpu.to(model.mem_logits_batch.device))
+
+            # ──────────────────────────────────────────────────────────────
+            # Zero gradients for frozen elites so their Adam state does not evolve
+            # ──────────────────────────────────────────────────────────────
+            if model.mem_logits_batch.grad is not None:
+                for i in range(population_size):
+                    if freeze_counter[i] > 0:
+                        model.mem_logits_batch.grad[i].zero_()
+
+            
+            if gl_n > 0:
+                
+                batch_logits = model.mem_logits_batch.detach().cpu()
+
+                if global_best_state.get('losses', None) is None:
+                    # First time: take top-k directly
+                    idxs = torch.topk(-batch_losses, gl_n, largest=True).indices
+                    global_best_state['losses'] = []
+                    global_best_state['mem_logits'] = []
+                    global_best_state['addr_maps'] = []
+                    global_best_state['operations'] = []
+                    global_best_state['temporal_usages'] = []
+                    global_best_state['max_times'] = []
+                    global_best_state['img_best'] = []
+
+                    for idx in idxs:
+                        idx = idx.item()
+                        global_best_state['losses'].append(batch_losses[idx].item())
+                        global_best_state['mem_logits'].append(batch_logits[idx].clone())
+                        global_best_state['addr_maps'].append(addr_maps[idx])
+                        global_best_state['operations'].append(operations[idx])
+                        global_best_state['temporal_usages'].append(temporal_usages[idx])
+                        global_best_state['max_times'].append(max_times[idx])
+                        global_best_state['img_best'].append(generate_overlay_image(
+                            addr_maps[idx], operations[idx], logical_order, D_ids,
+                            hsv_config=hsv_config, border_hsv_config=border_hsv_config,
+                            temporal_usage=temporal_usages[idx], max_time=max_times[idx]
+                        ))
+                else:
+
+                    
+                    if better.numel() > 0:
+                        # Collect candidates
+                        cand_losses = global_best_state['losses'][:]
+                        cand_logits = global_best_state['mem_logits'][:]
+                        cand_addr_maps = global_best_state['addr_maps'][:]
+                        cand_operations = global_best_state['operations'][:]
+                        cand_temporal_usages = global_best_state['temporal_usages'][:]
+                        cand_max_times = global_best_state['max_times'][:]
+                        cand_img_best = global_best_state['img_best'][:]
+
+                        # Add new improved samples
+                        for idx in better:
+                            idx = idx.item()
+                            cand_losses.append(batch_losses[idx].item())
+                            cand_logits.append(batch_logits[idx].clone())
+                            cand_addr_maps.append(addr_maps[idx])
+                            cand_operations.append(operations[idx])
+                            cand_temporal_usages.append(temporal_usages[idx])
+                            cand_max_times.append(max_times[idx])
+                            cand_img_best.append(generate_overlay_image(
+                                addr_maps[idx], operations[idx], logical_order, D_ids,
+                                hsv_config=hsv_config, border_hsv_config=border_hsv_config,
+                                temporal_usage=temporal_usages[idx], max_time=max_times[idx]
+                            ))
+
+                        # Prune back to top-k
+                        sorted_loss_indices = torch.topk(torch.tensor(cand_losses).neg(), gl_n, largest=True).indices
+                        global_best_state['losses'] = [cand_losses[i] for i in sorted_loss_indices]
+                        global_best_state['mem_logits'] = [cand_logits[i] for i in sorted_loss_indices]
+                        global_best_state['addr_maps'] = [cand_addr_maps[i] for i in sorted_loss_indices]
+                        global_best_state['operations'] = [cand_operations[i] for i in sorted_loss_indices]
+                        global_best_state['temporal_usages'] = [cand_temporal_usages[i] for i in sorted_loss_indices]
+                        global_best_state['max_times'] = [cand_max_times[i] for i in sorted_loss_indices]
+                        global_best_state['img_best'] = [cand_img_best[i] for i in sorted_loss_indices]
+
             img_current = None
-            img_best = global_best_state.get('img_best')
+            if display_mode in ('side_by_side', 'best_only'):
+                # cycle through global best images if requested
+                if global_best_state.get('img_best'):
+                    ptr = global_best_state.get('cycle_ptr', 0)
+                    if args.roll_global_images:
+                        idx = ptr % len(global_best_state['img_best'])
+                        img_best = global_best_state['img_best'][idx]
+                        global_best_state['cycle_ptr'] = ptr + 1
+                    else:
+                        # always show single best
+                        img_best = global_best_state['img_best'][0]
+                        
 
             if display_mode in ('side_by_side', 'current_only'):
                 img_current = generate_overlay_image(
                     addr_map_best, operations_best, logical_order, D_ids,
-                    hsv_config=hsv_config,
-                    border_hsv_config=border_hsv_config,
-                    temporal_usage=temporal_usage_best,
-                    max_time=max_time_best
+                    hsv_config=hsv_config, border_hsv_config=border_hsv_config,
+                    temporal_usage=temporal_usage_best, max_time=max_time_best
                 )
 
-            tag = '[BATCH+GEN]' if population_size > 1 else ''
-            print(f"{tag} Step {step:4d} Loss={loss_batch[best_idx].item():.2f} Best={global_best_loss:.2f} "
+            # compute lowest 3 losses (tight list up to 3)
+            sorted_losses, _ = torch.sort(loss_batch)
+            if global_best_state.get('losses') is not None and len(global_best_state['losses']) > 0:
+                low_losses = global_best_state['losses'][:min(3, len(global_best_state['losses']))]
+            else:
+                low_losses = sorted_losses[:min(3, sorted_losses.numel())]
+
+            low_str = ','.join(f"{l:.2f}" for l in low_losses)
+            # replace print to include lowest losses
+            print(f"[BATCH+GEN] Step {step:4d} Loss={loss_batch[best_idx].item():.2f} "
+                  f"Low3=[{low_str}] "
                   f"LogitsLR={logits_lr:.4f} NetLR={net_lr:.4f} MutStd={mutation_std:.4f} "
-                  f"LogitsClip={logits_grad_clip} NetClip={net_grad_clip} "
-                  f"LogitsAccum={logits_accum_steps} NetAccum={net_accum_steps} Freeze={freeze_rounds}")
+                  f"Clip={logits_grad_clip}/{net_grad_clip} Accum={logits_accum_steps}/{net_accum_steps}")
 
             if display_mode == 'side_by_side' and img_best is not None:
                 yield (img_current, img_best)
@@ -1128,6 +1247,7 @@ if __name__ == "__main__":
                 yield img_current
             elif display_mode == 'best_only' and img_best is not None:
                 yield img_best
+
 
 
     if args.dump_stage == 'asm':
