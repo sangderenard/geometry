@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 import numpy as np
 import torch
+import torch.amp
 import torch.nn as nn
 import torch.optim as optim
 import argparse
@@ -12,9 +13,11 @@ import matplotlib.pyplot as plt
 import colorsys
 import matplotlib.patches as patches
 from matplotlib.patches import FancyArrowPatch
+import pandas as pd
 
 MAX_WINDOW_WIDTH = 1000
 MAX_WINDOW_HEIGHT = 700
+MAX_M, MAX_K, MAX_N = (30, 30, 30)
 
 # ======================
 # Matrix setup
@@ -240,13 +243,136 @@ def run_pygame_gui(image_generator, display_mode='side_by_side'):
 import torch.nn.functional as F
 import numpy as np
 
+import torch
+import pandas as pd
+SCATTER_LIMIT = 8
+class Operation:
+    """
+    Class to define and manage operations for the BatchedTorchParametricSolver.
+    """
+    def __init__(self, valid_inputs, max_inputs, valid_outputs, max_outputs, string, sequence_order, time_penalty):
+        self.valid_inputs = valid_inputs
+        self.max_inputs = max_inputs
+        self.valid_outputs = valid_outputs
+        self.max_outputs = max_outputs
+        self.string = string
+        self.sequence_order = sequence_order
+        self.time_penalty = time_penalty
+
+        self.inputs = None
+        self.outputs = None
+    @staticmethod
+    def get_matmul_fuse(inputs, outputs):
+        """
+        Get the fused matmul operation for the given inputs.
+        """
+        return_value = Operation(inputs, 3, outputs, SCATTER_LIMIT, "MatMulFuseAdd", ((0,1,2),(0)), 0.0)
+        return return_value
+
+    @staticmethod
+    def from_string(string):
+        """
+        Convert a string representation to a list of inputs.
+        this is going to need some regex heavy lifting
+        """
+        if not string:
+            return []
+        return []
+
+    @staticmethod
+    def to_string(inputs):
+        """
+        Convert a list of inputs to a string representation.
+        """
+        if isinstance(inputs, list):
+            return ','.join(str(x) for x in inputs)
+        return str(inputs)
+
+    def __repr__(self):
+        return f"<{self.string}IN({Operation.to_string(self.inputs)})->O({Operation.to_string(self.outputs)})>"
+
+class Diagnostics:
+    """
+    Advanced diagnostics class for BatchedTorchParametricSolver.
+
+    Provides tensor-backend utilities and flush methods
+    to export operation and memory mappings to pandas DataFrames.
+    """
+    def __init__(self, solver):
+        """
+        Initialize with a BatchedTorchParametricSolver instance.
+
+        Args:
+            solver: instance of BatchedTorchParametricSolver
+        """
+        self.solver = solver
+        # Prepare persistent tables for diagnostics
+        # diagnostics always enabled; remove toggle
+        # Persistent storage for diagnostics tables
+        self.tables = {t: [] for t in ['nodes','ops','memory','events','errors','mapping']}
+        # Pre-compute static op mapping DataFrame
+        self.df_ops = self._build_ops_df()
+        # Log global nodes
+        import numpy as _np
+        for matrix_idx, mat in enumerate(self.solver.operand_id_matrices):
+            arr = mat.cpu().numpy()
+            for (r, c), node_id in _np.ndenumerate(arr):
+                self.log('nodes', node_id=int(node_id), matrix=matrix_idx, row=int(r), col=int(c))
+        # Log global operations
+        for rec in self.df_ops.to_dict(orient='records'):
+            self.log('ops', **rec)
+
+    def log(self, table, **kwargs):
+        """Record a row in the diagnostics table."""
+        if table not in self.tables:
+            raise KeyError(f"Unknown diagnostics table '{table}'")
+        self.tables[table].append(kwargs)
+
+    def to_df(self, table):
+        """Return a pandas DataFrame for the diagnostics table."""
+        return pd.DataFrame(self.tables.get(table, []))
+
+    # dump_all removed: all state now resides in-memory via Diagnostics
+    
+
+    def _build_ops_df(self, READWRITE_LINE=3):
+        """
+        Build DataFrame of all global operations:
+         - op_idx: operation index (0..num_ops-1)
+         - dst_id: destination node ID
+         - src_0, src_1, ...: source node IDs (padded)
+        """
+        num_ops = self.solver.num_ops
+        # Gather op_targets and op_sources from solver
+        dst = self.solver.op_targets.cpu().numpy()
+        src = self.solver.op_sources.cpu().numpy()
+        data = {
+            'operations_types': list(self.solver.operations_types.values()),
+            'operation_identities':  list(range(num_ops)),
+            'input_sets': list(self.solver.operand_ids[:READWRITE_LINE]),
+            'input_masks': list(torch.ones_like(self.solver.operand_ids[:READWRITE_LINE]), dtype=torch.bool),
+            'output_sets': list(self.solver.operand_ids[READWRITE_LINE:]),
+            'output_masks': list(torch.ones_like(self.solver.operand_ids[:READWRITE_LINE]), dtype=torch.bool),
+            'memory_space': list(self.solver.all_ids),
+            'memory_masks': list(torch.ones_like(self.solver.all_ids), dtype=torch.bool),
+        }
+        # Add each source channel
+        for i in range(src.shape[1]):
+            data[f'src_{i}'] = src[:, i]
+        return pd.DataFrame(data)
+
+    def get_ops_df(self):
+        """
+        Return the pre-built operations DataFrame.
+        """
+        return self.df_ops.copy()
 
 
 class BatchedTorchParametricSolver(nn.Module):
     def __init__(self, operand_id_matrices, max_matrix_shape=None, max_total_elements=None, attn_embed_dim=32, attn_layers=1):
         super().__init__()
         self.operand_id_matrices = operand_id_matrices
-        self.operand_ids = [ids.flatten() for ids in operand_id_matrices]
+        self.operand_ids = [ids.cpu().numpy().flatten() for ids in operand_id_matrices]
         self.all_ids = np.concatenate(self.operand_ids)
         self.num_elements = len(self.all_ids)
         # Build op_targets and op_sources as tensors
@@ -280,13 +406,13 @@ class BatchedTorchParametricSolver(nn.Module):
                     ])
 
         # Turn the nested Python lists into tensors
-        self.op_targets = torch.tensor(op_targets, dtype=torch.long, device='cuda')
+        self.op_targets = torch.tensor(op_targets, dtype=torch.long, device=device)
         # Pad the ragged source lists with a sentinel (-1) so they can form a tensor
         max_src = max(len(srcs) for srcs in op_sources)   # = K or 1
         src_tensor = -torch.ones(len(op_sources), max_src, dtype=torch.long)
         for row, srcs in enumerate(op_sources):
             src_tensor[row, :len(srcs)] = torch.tensor(srcs)
-        self.op_sources = src_tensor.to('cuda')
+        self.op_sources = src_tensor.to(device)
 
         self.num_ops     = self.op_targets.shape[0]
         self.num_sources = max_src          # now 1 or 2
@@ -299,9 +425,7 @@ class BatchedTorchParametricSolver(nn.Module):
             else:
                 self.pretty_ops.append(f"D{tgt} += A{srcs[0]} * B{srcs[1]}")
 
-        # Cache index grids and constants for build_ops_batch
-        MAX_M, MAX_K = operand_id_matrices[0].shape
-        MAX_N = operand_id_matrices[1].shape[1]
+
 
         self.MAX_M = MAX_M
         self.MAX_K = MAX_K
@@ -336,6 +460,8 @@ class BatchedTorchParametricSolver(nn.Module):
         encoder_layer = nn.TransformerEncoderLayer(d_model=attn_embed_dim, nhead=4, batch_first=True)
         self.transformer = nn.TransformerEncoder(encoder_layer, num_layers=attn_layers)
         self.op_proj = nn.Linear(attn_embed_dim, self.num_ops)
+        # Attach Diagnostics and enable persistent logging
+        self.diagnostics = Diagnostics(self)
 
     # === micro batching support =========================================
     def _attn_forward(self, tokens_proj, attn_mask, micro):
@@ -355,18 +481,17 @@ class BatchedTorchParametricSolver(nn.Module):
         return torch.cat(chunks, 0)
 
 
-    def from_logits(self, mem_logits_batch, reinforce=True, matrix_shapes=None, matrix_masks=None, attn_micro=0):
+    def from_logits(self, mem_logits_batch, op_tgt_batch, op_src_batch, valid_mask, reinforce=True, matrix_shapes=None, matrix_masks=None, attn_micro=0):
         batch_size = mem_logits_batch.shape[0]
         device = mem_logits_batch.device
         B, N = mem_logits_batch.shape
 
-        # --- Batched Gumbel sampling + argsort
-        gumbel = -torch.empty_like(mem_logits_batch).exponential_().log()
-        sampled_mem_order = torch.argsort(mem_logits_batch + gumbel, dim=1)  # (B, N)
+        # ← pull memory order *only* from Diagnostics
+        df_mem = self.diagnostics.to_df('memory')
+        latest = df_mem.iloc[-1]['mem_ranks']
+        sampled_mem_order = torch.tensor(latest, device=mem_logits_batch.device)
 
-        # --- Batched mem_ranks
-        mem_ranks = torch.zeros_like(sampled_mem_order)
-        mem_ranks.scatter_(1, sampled_mem_order, torch.arange(N, device=device).unsqueeze(0).expand(B, N))
+        THISTEXTUSEDTOSAYMEMRANKSGITHUBCOPILOTWASTOOINCOMPETENTANDOBSTINATETOREMOVEITSOITSBEENMADEMOREOBVIOUS.scatter_(1, sampled_mem_order, torch.arange(N, device=device).unsqueeze(0).expand(B, N))
 
         # --- Per-matrix padding/masking ---
         max_H, max_W = self.max_matrix_shape
@@ -376,7 +501,7 @@ class BatchedTorchParametricSolver(nn.Module):
         for idx, mat in enumerate(self.operand_id_matrices):
             H, W = mat.shape
             num = H * W
-            mat_indices = mem_ranks[:, start:start+num].reshape(B, 1, H, W).float()
+            mat_indices = THISTEXTUSEDTOSAYMEMRANKSGITHUBCOPILOTWASTOOINCOMPETENTANDOBSTINATETOREMOVEITSOITSBEENMADEMOREOBVIOUS[:, start:start+num].reshape(B, 1, H, W).float()
             # Pad to (B, 1, max_H, max_W)
             pad = (0, max_W - W, 0, max_H - H)
             mat_padded = F.pad(mat_indices, pad)
@@ -441,15 +566,120 @@ class BatchedTorchParametricSolver(nn.Module):
 
         gumbel_op = -torch.empty_like(op_logits).exponential_().log()
         sampled_op_order = torch.argsort(op_logits + gumbel_op, dim=1)  # (B, num_ops)
+        print(f"valid_mask shape: {valid_mask.shape}")
+        print(f"sampled_op_order shape: {sampled_op_order.shape}")
+        print(f"sampled_op_order min/max: {sampled_op_order.min().item()} / {sampled_op_order.max().item()}")
 
+        # -------------------------------------------------------------
+        # Vectorised “which op templates are legal for this MNK?” filter
+        # -------------------------------------------------------------
+        B        = op_tgt_batch.size(0)
+        num_ops  = self.num_ops
+        pad_id   = -1                          # single sentinel for any pad
+
+        # 1⃣  Boolean table:  id_present[b, id] == True  ↔  that ID is used
+        id_present = torch.zeros(B, num_ops,
+                                 dtype=torch.bool, device=device)
+
+        # ---- mark destinations --------------------------------------
+        id_present.scatter_(
+            1,
+            op_tgt_batch.clamp_min(0),         # -1 → 0 (safe dummy)
+            valid_mask                         # only real rows
+        )
+
+        # ---- mark sources (both channels at once) -------------------
+        src_mask = (op_src_batch != pad_id) & valid_mask.unsqueeze(2)   # (B,L,S)
+        id_present.scatter_(
+            1,
+            op_src_batch.clamp_min(0).view(B, -1),
+            src_mask.view(B, -1)
+        )
+
+        # 2⃣  A template is legal if its dest **and all real sources**
+        #     are present in this sample.
+        op_ids_in_order = self.op_targets[sampled_op_order]             # (B,num_ops)
+
+        dest_ok = torch.gather(id_present, 1, op_ids_in_order)          # (B,num_ops)
+
+        src_ids_tpl = self.op_sources[op_ids_in_order].clamp_min(0)     # (B,num_ops,S)
+        real_src_m  = self.op_sources[op_ids_in_order] != pad_id        # pads → False
+
+        print(f"id_present: {id_present}, shape: {id_present.shape}")
+        print(f"src_ids_tpl: {src_ids_tpl}, shape: {src_ids_tpl.shape}")
+
+        
+        id_present = id_present.unsqueeze(1).expand(-1, num_ops, -1)  # (B,num_ops,num_ops)
+        print(f"id_present after expand: {id_present}, shape: {id_present.shape}")
+        src_ok = torch.gather(                       # look up every source
+                    id_present,   # (B,num_ops,num_ops)
+                    2, src_ids_tpl)
+        print(f"src_ok before mask: {src_ok}, shape: {src_ok.shape}, count: {src_ok.sum().item()}")
+        src_ok = src_ok | ~real_src_m         # ignore pads
+        print(f"src_ok: {src_ok}, shape: {src_ok.shape}, count: {src_ok.sum().item()}")
+        
+        all_src_ok = src_ok.all(dim=-1)                   # (B,num_ops)
+        print(f"all_src_ok: {all_src_ok}, shape: {all_src_ok.shape}, count: {all_src_ok.sum().item()}")
+        keep = dest_ok & all_src_ok      # ← final cross-referenced keep-mask
+        self.keep = keep
+
+        # everything below (row_counts, L_max, etc.) stays unchanged
+        row_counts = keep.sum(1)
+        L_max      = int(row_counts.max())
+           # longest op-list
+        # flat indices of all kept ops (b, k) pairs
+        flat_idx = keep.nonzero(as_tuple=False)                          # (ΣL , 2)
+        print(f"flat_idx shape: {flat_idx.shape}")
+        print(f"flat_idx min/max: {flat_idx.min().item()} / {flat_idx.max().item()}")
+        # gather ragged source / destination lists so we can know maxima
+        src_lists, dst_lists = [], []
+        for b, k in flat_idx:                                           # ΣL is usually small
+            op_id   = sampled_op_order[b, k].item()
+            src_ids = self.op_sources[op_id][self.op_sources[op_id] >= 0]        # 1-D tensor
+            dst_id  = self.op_targets[op_id]
+            dst_ids = dst_id if dst_id.ndim else dst_id.unsqueeze(0)            # make it list
+            src_lists.append(src_ids)
+            dst_lists.append(dst_ids)
+
+        S_max = max(len(s) for s in src_lists)                           # most sources in batch
+        D_max = max(len(d) for d in dst_lists)                           # most dests   “
+
+        # allocate padded rectangles
+        pad_src = torch.full((B, L_max, S_max), -1, dtype=torch.long, device=device)
+        pad_dst = torch.full((B, L_max, D_max), -1, dtype=torch.long, device=device)
+        src_msk = torch.zeros((B, L_max, S_max),  dtype=torch.bool, device=device)
+        dst_msk = torch.zeros((B, L_max, D_max),  dtype=torch.bool, device=device)
+
+        # -------------------------------------------- scatter ragged lists with compact indices
+        # initialize compact op-order tensor for REINFORCE
+        sampled_op_order_masked = pad_dst.new_full((B, L_max), -1)
+        for b in range(B):
+            cols = keep[b].nonzero(as_tuple=False).flatten()  # kept col-positions
+            for j, col in enumerate(cols):  # j := 0..row_counts[b]-1
+                op_id = sampled_op_order[b, col].item()
+
+                # gather sources and destinations for this op
+                src_ids = self.op_sources[op_id][self.op_sources[op_id] >= 0]
+                dst_id = self.op_targets[op_id]
+                dst_ids = dst_id if dst_id.ndim else dst_id.unsqueeze(0)
+
+                # scatter into padded tensors
+                pad_src[b, j, :len(src_ids)] = src_ids
+                pad_dst[b, j, :len(dst_ids)] = dst_ids
+                src_msk[b, j, :len(src_ids)] = True
+                dst_msk[b, j, :len(dst_ids)] = True
+                sampled_op_order_masked[b, j] = op_id  # compact REINFORCE list
+
+        # convenience node-level mask
+        seq_mask = torch.cat([src_msk, dst_msk], dim=2)  # (B , L_max , S_max+D_max) bool
         # -------------------------------- dump hooks ------------------------
         if getattr(self, '_dump_stage', None) == 'sampled':
             if (not torch.distributed.is_available() or
                 not torch.distributed.is_initialized() or
                 torch.distributed.get_rank() == 0):
                 for row, op_idx in enumerate(sampled_op_order[0]):
-                    tgt  = int(self.op_targets[op_idx])
-                    srcs = [int(s) for s in self.op_sources[op_idx] if s>=0]
+                    tgt  = int(op_tgt_batch[op_idx])
+                    srcs = [int(s) for s in op_src_batch[op_idx] if s>=0]
                     if len(srcs)==1:
                         print(f"{row:3d}: D{tgt} += C{srcs[0]}")
                     else:
@@ -469,19 +699,20 @@ class BatchedTorchParametricSolver(nn.Module):
         op_logprobs_batch = sorted_log_probs_op.sum(dim=1)  # (B,)
 
         # --- Build sequences for penalty computation
-        op_sources_exp = self.op_sources.unsqueeze(0).expand(B, -1, -1)  # (B, num_ops, num_sources)
-        op_targets_exp = torch.gather(
-            self.op_targets.unsqueeze(0).expand(B, -1), 
-            1, sampled_op_order
-        )  # (B, num_ops)
-        seq = torch.cat([op_sources_exp, op_targets_exp.unsqueeze(2)], dim=2)  # (B, num_ops, num_sources+1)
+        op_sources_exp = op_src_batch
+        op_targets_exp = sampled_op_order_masked
+        print(f"op_sources_exp.shape = {op_sources_exp.shape}")
+        print(f"op_targets_exp.shape = {op_targets_exp.shape}")
+
+        # Use padded source and destination tensors
+        seq = torch.cat([pad_src, pad_dst], dim=2)  # (B , L_max , S_max+D_max)
 
         # Map seq IDs to addresses
-        mem_ranks_exp = mem_ranks.unsqueeze(1).expand(-1, seq.shape[1], -1)  # (B, num_ops, N)
+        THISTEXTUSEDTOSAYMEMRANKSGITHUBCOPILOTWASTOOINCOMPETENTANDOBSTINATETOREMOVEITSOITSBEENMADEMOREOBVIOUS_exp = THISTEXTUSEDTOSAYMEMRANKSGITHUBCOPILOTWASTOOINCOMPETENTANDOBSTINATETOREMOVEITSOITSBEENMADEMOREOBVIOUS.unsqueeze(1).expand(-1, seq.shape[1], -1)  # (B, num_ops, N)
         # NEW – safe gather
         seq_valid   = seq.ge(0)                    # True where real id
         seq_clamped = seq.clamp(min=0)             # -1 → 0 (any valid index)
-        seq_addrs   = torch.gather(mem_ranks_exp, 2, seq_clamped)
+        seq_addrs   = torch.gather(THISTEXTUSEDTOSAYMEMRANKSGITHUBCOPILOTWASTOOINCOMPETENTANDOBSTINATETOREMOVEITSOITSBEENMADEMOREOBVIOUS_exp, 2, seq_clamped)
         seq_addrs   = seq_addrs * seq_valid        # mask out dummies
 
         # --- Compute penalties
@@ -503,12 +734,13 @@ class BatchedTorchParametricSolver(nn.Module):
                 op_order = sampled_op_order[0]
                 seq_addrs0 = seq_addrs[0]
                 for row, op_idx in enumerate(op_order):
-                    tgt  = int(self.op_targets[op_idx])
-                    srcs = [int(s) for s in self.op_sources[op_idx] if s>=0]
+                    tgt  = int(op_tgt_batch[op_idx])
+                    srcs = [int(s) for s in op_src_batch[op_idx] if s>=0]
                     addrs = [int(seq_addrs0[row, i].item()) for i in range(len(srcs)+1)]
                     hop_str = ''
                     if len(srcs) == 1:
                         hop_str = f"hops: {addrs[1] - addrs[0]}"
+
                         print(f"{row:3d}: D{tgt} += C{srcs[0]}   {hop_str}")
                     else:
                         hop_str = f"hops: {addrs[1] - addrs[0]}, {addrs[2] - addrs[1]}"
@@ -523,15 +755,26 @@ class BatchedTorchParametricSolver(nn.Module):
                       torch.where(hops <= l1, base * 1.5,
                       torch.where(hops <= l2, base * 2.0,
                       torch.where(hops <= l3, base * 3.0, base * 5.0))))
-            return staged.mean(dim=(-1, -2) if staged.dim() > 2 else -1)
+            return staged
 
-        inter_pen_batch = staged_penalty(inter_forward_hops, 1.0) + staged_penalty(inter_backward_hops, 2.0)
-        intra_pen_batch = staged_penalty(intra_forward_hops, 1.0) + staged_penalty(intra_backward_hops, 2.0)
+        
+        inter_pen_raw = staged_penalty(inter_forward_hops, 1.0) + staged_penalty(inter_backward_hops, 2.0)
+        intra_pen_raw = staged_penalty(intra_forward_hops, 1.0) + staged_penalty(intra_backward_hops, 2.0)
+        
+        # Compute edge masks for weighted reduction
+        intra_mask = adjacent_mask(seq_mask, dim=-1)     # (B, L_max, S_max-1)
+        row_mask   = seq_mask.any(dim=-1)                # (B, L_max)
+        inter_mask = adjacent_mask(row_mask, dim=1)      # (B, L_max-1)
+        # Weighted reductions using node and edge masks
+        intra_pen_batch = weighted_mean(intra_pen_raw, intra_mask, (-1, -2))
+        inter_pen_batch = weighted_mean(inter_pen_raw, inter_mask, (-1,))
 
+
+        # Proceed to return
         return (
             inter_pen_batch.requires_grad_(),
             intra_pen_batch.requires_grad_(),
-            mem_ranks.detach(),
+            THISTEXTUSEDTOSAYMEMRANKSGITHUBCOPILOTWASTOOINCOMPETENTANDOBSTINATETOREMOVEITSOITSBEENMADEMOREOBVIOUS.detach(),
             sampled_op_order.detach(),
             op_logprobs_batch,
             mem_logprobs_batch
@@ -539,9 +782,9 @@ class BatchedTorchParametricSolver(nn.Module):
 
     def route_per_matrix_features(self, per_matrix_features, addr_map, lane_width, device):
         # Build flat memory ranks tensor
-        mem_ranks = torch.tensor([addr_map[label] for label in self.all_ids], device=device)
-        rows = (mem_ranks // lane_width).long()
-        cols = (mem_ranks % lane_width).long()
+        THISTEXTUSEDTOSAYMEMRANKSGITHUBCOPILOTWASTOOINCOMPETENTANDOBSTINATETOREMOVEITSOITSBEENMADEMOREOBVIOUS = torch.tensor([addr_map[label] for label in self.all_ids], device=device)
+        rows = (THISTEXTUSEDTOSAYMEMRANKSGITHUBCOPILOTWASTOOINCOMPETENTANDOBSTINATETOREMOVEITSOITSBEENMADEMOREOBVIOUS // lane_width).long()
+        cols = (THISTEXTUSEDTOSAYMEMRANKSGITHUBCOPILOTWASTOOINCOMPETENTANDOBSTINATETOREMOVEITSOITSBEENMADEMOREOBVIOUS % lane_width).long()
         n_rows = int(torch.max(rows).item() + 1)
 
         # Build flat features
@@ -564,70 +807,126 @@ class BatchedTorchParametricSolver(nn.Module):
             per_matrix_inputs.append(mat_indices.unsqueeze(0).float())
             start += num
         return per_matrix_inputs
-    def _build_ops_batch(self, MNK, A_ids, B_ids, D_ids):
+    def _build_ops_batch(self, MNK, A_ids, B_ids, C_ids, D_ids):
         """
-        MNK:  (B, 3)  tensor with M,N,K per sample   (on cuda)
+        MNK:  (B, 3)  tensor with M,N,K per sample (on cuda)
         A_ids,B_ids,D_ids : (MAX_M,MAX_K) / (MAX_K,MAX_N) / (MAX_M,MAX_N)
 
-        returns
-            op_tgt   (B, L_max)          int64
-            op_src   (B, L_max, 2)       int64
-            valid    (B, L_max)          bool   (mask)
+        returns:
+            op_tgt   (B, L_max_bias + L_max_prod)   int64
+            op_src   (B, L_max_bias + L_max_prod, 2) int64
+            valid    (B, L_max_bias + L_max_prod)    bool mask
         """
         B = MNK.size(0)
-        M, N, K = MNK[:,0], MNK[:,1], MNK[:,2]          # (B,)
+        M, N, K = MNK[:,0], MNK[:,1], MNK[:,2]   # (B,)
 
-        # ---------- broadcast indices to (B, MAX_M, MAX_N, MAX_K) ----------
-        I = self.row_idx        # (1,MAX_M,1,1)
-        J = self.col_idx        # (1,1,MAX_N,1)
-        Kk= self.k_idx          # (1,1,1,MAX_K)
+        # Prepare index shapes
+        I = self.row_idx    # shape (1, MAX_M, 1, 1)
+        J = self.col_idx    # shape (1, 1, MAX_N, 1)
+        Kk= self.k_idx      # shape (1, 1, 1, MAX_K)
 
-        # keep only rows / cols / ks that are inside each sample's bounds
-        keep = (I < M.view(B,1,1,1)) & \
-            (J < N.view(B,1,1,1)) & \
-            (Kk< K.view(B,1,1,1))                       # (B, M,N,K)
+        # Compute masks for bias (C) and products (A*B)
+        keep_bias = (I[...,0] < M.view(B,1,1)) & (J[...,0] < N.view(B,1,1))       # (B, MAX_M, MAX_N)
+        keep_prod = (I < M.view(B,1,1,1)) & (J < N.view(B,1,1,1)) & (Kk < K.view(B,1,1,1))  # (B, MAX_M, MAX_N, MAX_K)
 
-        # flatten to (B, L_max)
-        keep_f = keep.view(B, -1)
-        L_max  = keep_f.sum(1).max().item()               # longest sequence
+        # Flatten masks
+        keep_bias_f = keep_bias.view(B, -1)       # (B, MAX_M*MAX_N)
+        keep_prod_f = keep_prod.view(B, -1)       # (B, MAX_M*MAX_N*MAX_K)
 
-        # build flat rank tensors once
-        flat_A = A_ids.view(-1)           # (MAX_M*MAX_K,)
+        # Determine maximum padded lengths
+        L_max_bias = keep_bias_f.sum(1).max().item()
+        L_max_prod = keep_prod_f.sum(1).max().item()
+
+        # Flatten index tensors for gathering
+        flat_A = A_ids.view(-1)  # (MAX_M*MAX_K,)
         flat_B = B_ids.view(-1)
         flat_D = D_ids.view(-1)
+        flat_C = C_ids.view(-1)  # (MAX_M*MAX_N,)
+        # Build flattened indices
+        a_lin = (I * self.MAX_K + Kk).expand(B, MAX_M, MAX_N, MAX_K)
+        b_lin = (Kk * self.MAX_N + J).expand(B, MAX_M, MAX_N, MAX_K)
+        d_lin = (I[...,0] * self.MAX_N + J[...,0]).expand(B, MAX_M, MAX_N)
+        c_lin = d_lin.clone()  # C is the same as D in terms of indices
 
-        # linearised indices into A/B/D
-        a_lin = (I * self.MAX_K + Kk).view(-1)                 # length MAX_M*MAX_K*MAX_N
-        b_lin = (Kk* self.MAX_N + J ).view(-1)
-        d_lin = (I * self.MAX_N + J ).view(-1)
+        src0 = flat_A[a_lin]             # (B, MAX_M, MAX_N, MAX_K)
+        src1 = flat_B[b_lin]
+        src2 = flat_C[c_lin]
+        tgt_bias = flat_D[d_lin]         # (B, MAX_M, MAX_N)
+        tgt_prod = tgt_bias.unsqueeze(-1).expand_as(src0)
 
-        # gather and reshape back to (B, M,N,K)
-        src0 = flat_A[a_lin].view_as(keep)                # int64
-        src1 = flat_B[b_lin].view_as(keep)
-        tgt  = flat_D[d_lin].view_as(keep)
+        # Helper to pad variable-length selections
+        def _pad(x, keep_mask_f, L_max, sentinel=-1):
+            x_f = x.contiguous().view(B, -1)
 
-        # apply mask & pad to L_max
-        def _pad(x):
-            x_f = x.view(B,-1)
-            padded = torch.zeros(B, L_max, dtype=torch.long, device=x.device)
-            for b in range(B):                        # still python loop *over batch only*
-                n = keep_f[b].sum().item()
-                padded[b,:n] = x_f[b, keep_f[b]]
+            padded = torch.full((B, L_max), sentinel, dtype=torch.long, device=x.device)
+            for b in range(B):
+                n = keep_mask_f[b].sum().item()
+                if n > 0:
+                    padded[b, :n] = x_f[b, keep_mask_f[b]]
             return padded
 
-        op_tgt = _pad(tgt)
-        op_src = torch.stack((_pad(src0), _pad(src1)), dim=2)  # (B,L_max,2)
+        # Build bias targets (D += C)
+        op_tgt_bias = _pad(tgt_bias, keep_bias_f, L_max_bias)
+        op_src_bias0 = _pad(src2, keep_bias_f, L_max_bias)  # C sources
+        op_src_bias1 = torch.full_like(op_src_bias0, -1)
+        op_src_bias = torch.stack([op_src_bias0, op_src_bias1], dim=2)
 
-        valid_mask = op_tgt != 0    # or keep_f padded the same way
+        # Build product targets (D += A*B)
+        op_tgt_prod = _pad(tgt_prod, keep_prod_f, L_max_prod)
+        op_src_prod0 = _pad(src0, keep_prod_f, L_max_prod)
+        op_src_prod1 = _pad(src1, keep_prod_f, L_max_prod)
+        op_src_prod = torch.stack([op_src_prod0, op_src_prod1], dim=2)
+
+        # Concatenate all
+        op_tgt = torch.cat([op_tgt_bias, op_tgt_prod], dim=1)
+        op_src = torch.cat([op_src_bias, op_src_prod], dim=1)
+        valid_mask = op_tgt != -1
 
         return op_tgt, op_src, valid_mask
 
+def adjacent_mask(mask: torch.Tensor, dim: int) -> torch.Tensor:
+    """
+    Given a boolean *node* mask, return a boolean *edge* mask that is True
+    iff **both** adjacent nodes along `dim` are present.
+
+    Parameters
+    ----------
+    mask : bool tensor
+        Arbitrary shape, True == valid node.
+    dim  : int
+        Dimension along which adjacency is defined (0-based, can be negative).
+
+    Returns
+    -------
+    edge_mask : bool tensor
+        Same shape as `mask` but with size(dim) reduced by 1.
+    """
+    if mask.size(dim) < 2:
+        # return an empty edge-dimension view, keeps broadcasting stable
+        shape = list(mask.shape)
+        shape[dim] = 0
+        return mask.new_empty(shape, dtype=torch.bool)
+
+    # non-allocating view slices
+    a = mask.narrow(dim, 0, mask.size(dim) - 1)
+    b = mask.narrow(dim, 1, mask.size(dim) - 1)
+    return a & b
+def weighted_mean(x: torch.Tensor, weight: torch.Tensor, reduce_dims):
+    """
+    Mean over `reduce_dims` with explicit weights (0/1 masks or real).
+
+    x, weight must broadcast; weight is NOT assumed to sum to 1.
+    """
+    w = weight.float()
+    return (x * w).sum(dim=reduce_dims) / w.sum(dim=reduce_dims).clamp(min=1)
 
 # ======================
 # Main (Unified: single and batched)
 # ======================
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
+    parser.add_argument('--cpu', action='store_true',
+                        help='Run on CPU (default is CUDA)')
     parser.add_argument('--steps', type=int, default=500)
     parser.add_argument('--attn_micro', type=int, default=64,
                         help='inner mini-batch size for the transformer; '
@@ -647,6 +946,12 @@ if __name__ == "__main__":
                     help='Dump ops right after assembly (asm), after the '
                          'sampled ordering (sampled) or after address '
                          'translation / hop-building (hops) and exit')
+    parser.add_argument('--m_dev_expr', type=str, default=None,
+        help='Sympy expression for per-sample M dimension, e.g. "parser - 5*sin(0.1*step)"')
+    parser.add_argument('--n_dev_expr', type=str, default=None,
+        help='Sympy expression for per-sample N dimension')
+    parser.add_argument('--k_dev_expr', type=str, default=None,
+        help='Sympy expression for per-sample K dimension')
 
     # --- Logits controls ---
     parser.add_argument('--logits_lr', type=float, default=0.1)
@@ -784,16 +1089,21 @@ if __name__ == "__main__":
     # ────────────────────────────────────────────────────────────────
 
 
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    device = torch.device("cuda" if torch.cuda.is_available() and not args.cpu else "cpu")
     print(f"[INFO] Using device: {device}")
 
-    M,N,K = args.size, args.size, args.size
+    M,N,K = MAX_M, MAX_N, MAX_K
     offset = 0
     A_ids, offset = label_matrix_ids((M,K), offset)
     B_ids, offset = label_matrix_ids((K,N), offset)
     C_ids, offset = label_matrix_ids((M,N), offset)
     D_ids, offset = label_matrix_ids((M,N), offset)
+
     logical_order = np.concatenate([A_ids.flatten(), B_ids.flatten(), C_ids.flatten(), D_ids.flatten()])
+    A_ids = torch.tensor(A_ids, dtype=torch.long, device=device)
+    B_ids = torch.tensor(B_ids, dtype=torch.long, device=device)
+    C_ids = torch.tensor(C_ids, dtype=torch.long, device=device)
+    D_ids = torch.tensor(D_ids, dtype=torch.long, device=device)
     # --------------------------------------------------------------------
     global matrix_of
     matrix_of = {}
@@ -873,13 +1183,18 @@ if __name__ == "__main__":
 
     import random
     # Sympy parsing utility
-    def make_sympy_fn(expr, default=None):
+    def make_sympy_fn(expr, local_dict=None, default=None):
         if expr is None:
             return lambda **kwargs: default
-        syms = sympy.symbols('epoch step batch batch_size grad_accum substep')
-        expr = sympy.sympify(expr, locals={"exp": sympy.exp, "log": sympy.log, "sqrt": sympy.sqrt, "sin": sympy.sin, "cos": sympy.cos, "pi": sympy.pi})
+        syms = sympy.symbols('epoch step batch batch_size grad_accum substep MAX_M MAX_N MAX_K')
+        expr = sympy.sympify(expr, locals={
+            "exp": sympy.exp, "log": sympy.log, "sqrt": sympy.sqrt, 
+            "sin": sympy.sin, "cos": sympy.cos, "pi": sympy.pi,
+            "rand": lambda: random.random()
+        })
         def fn(**kwargs):
-            return float(expr.evalf(subs=kwargs))
+            locals = {**kwargs}
+            return float(expr.evalf(subs=locals))
         return fn
 
     # --- Logits schedules ---
@@ -917,10 +1232,22 @@ if __name__ == "__main__":
         substep = 0
 
         stream = torch.cuda.Stream() if device.type == 'cuda' else None
-        autocast_enabled = args.autocast and device.type == 'cuda'
-        scaler = torch.amp.GradScaler('cuda', enabled=autocast_enabled)
+        autocast_enabled = args.autocast and device.type == 'cuda' and torch.cuda.is_available()
+        scaler = torch.amp.GradScaler('cpu')
+        if autocast_enabled or device.type == 'cuda':
+            scaler = torch.amp.GradScaler('cuda', enabled=autocast_enabled)
 
         for step in range(args.steps):
+            m_dev_fn = make_sympy_fn(args.m_dev_expr, default=MAX_M)
+            n_dev_fn = make_sympy_fn(args.n_dev_expr, default=MAX_N)
+            k_dev_fn = make_sympy_fn(args.k_dev_expr, default=MAX_K)
+
+            MNK = torch.zeros(batch_size, 3, device=device)
+            for b in range(batch_size):
+                MNK[b,0] = m_dev_fn(step=step, epoch=epoch, MAX_M=MAX_M, MAX_N=MAX_N, MAX_K=MAX_K)
+                MNK[b,1] = n_dev_fn(step=step, epoch=epoch, MAX_M=MAX_M, MAX_N=MAX_N, MAX_K=MAX_K)
+                MNK[b,2] = k_dev_fn(step=step, epoch=epoch, MAX_M=MAX_M, MAX_N=MAX_N, MAX_K=MAX_K)
+
             if step % population_size == 0 and step > 0:
                 epoch += 1
 
@@ -951,19 +1278,32 @@ if __name__ == "__main__":
                 logits_optimizer.zero_grad(set_to_none=True)
             if net_optimizer and net_accum_count == 0:
                 net_optimizer.zero_grad(set_to_none=True)
-
-            if autocast_enabled:
+            op_tgt_batch, op_src_batch, valid_mask = model._build_ops_batch(MNK, A_ids, B_ids, C_ids, D_ids)
+            if autocast_enabled and device.type == 'cuda':
                 autocast_ctx = torch.amp.autocast('cuda')
-            else:
+            elif device.type == 'cuda':
                 autocast_ctx = torch.amp.autocast('cuda', enabled=False)
-            if stream is not None:
+            if stream is not None and device.type == 'cuda':
                 with torch.cuda.stream(stream):
                     with autocast_ctx:
-                        forward_out = model.from_logits(model.mem_logits_batch, attn_micro=args.attn_micro)
-            else:
+                        forward_out = model.from_logits(
+                            model.mem_logits_batch,
+                            op_tgt_batch, op_src_batch, valid_mask,
+                            attn_micro=args.attn_micro
+                        )
+            elif device.type == 'cuda':
                 with autocast_ctx:
-                    forward_out = model.from_logits(model.mem_logits_batch, attn_micro=args.attn_micro)
-
+                    forward_out = model.from_logits(
+                        model.mem_logits_batch,
+                        op_tgt_batch, op_src_batch, valid_mask,
+                        attn_micro=args.attn_micro
+                    )
+            else:
+                forward_out = model.from_logits(
+                    model.mem_logits_batch,
+                    op_tgt_batch, op_src_batch, valid_mask,
+                    attn_micro=args.attn_micro
+                )
             with torch.no_grad():
                 try:
                     torch._C._get_tracing_state().attn_micro = args.attn_micro
@@ -971,8 +1311,9 @@ if __name__ == "__main__":
                     pass
             if stream is not None:
                 stream.synchronize()
+            
 
-            inter_pen_batch, intra_pen_batch, mem_ranks_batch, sampled_ops_batch, op_logprobs_batch, mem_logprobs_batch = forward_out
+            inter_pen_batch, intra_pen_batch, THISTEXTUSEDTOSAYMEMRANKSGITHUBCOPILOTWASTOOINCOMPETENTANDOBSTINATETOREMOVEITSOITSBEENMADEMOREOBVIOUS_batch, sampled_ops_batch, op_logprobs_batch, mem_logprobs_batch = forward_out
             loss_batch = inter_pen_batch + intra_pen_batch
             base_loss = (- loss_batch * (op_logprobs_batch + mem_logprobs_batch)).mean()
 
@@ -1011,10 +1352,10 @@ if __name__ == "__main__":
             sorted_losses, sorted_idxs = torch.sort(batch_losses)
             low_n = min(3, sorted_losses.numel())
             gl_n = max(1, args.global_list_size)
+            #print(sorted_idxs, sorted_idxs.shape)
             better = sorted_idxs[:gl_n]
             best_idx = better[0].item()
             # Keep other top-k as improved indices
-            
             
 
             # --- Preallocate default containers
@@ -1031,11 +1372,13 @@ if __name__ == "__main__":
             for b in range(batch_size):
                 # only fill for best or those in top-k better list
                 if b == best_idx or b in better:
-                    mem_ranks = mem_ranks_batch[b]
-                    op_indices = sampled_ops_batch[b]
+                    THISTEXTUSEDTOSAYMEMRANKSGITHUBCOPILOTWASTOOINCOMPETENTANDOBSTINATETOREMOVEITSOITSBEENMADEMOREOBVIOUS = THISTEXTUSEDTOSAYMEMRANKSGITHUBCOPILOTWASTOOINCOMPETENTANDOBSTINATETOREMOVEITSOITSBEENMADEMOREOBVIOUS_batch[b]
+                    # select only kept operation indices
+                    keep_cols   = model.keep[b].nonzero(as_tuple=False).flatten()
+                    op_indices  = sampled_ops_batch[b, keep_cols]    # L_max ops
 
                     # build addr_map for this sample
-                    addr_map_b = {int(model.all_ids[i]): int(mem_ranks[i].cpu()) for i in range(len(model.all_ids))}
+                    addr_map_b = {int(model.all_ids[i]): int(THISTEXTUSEDTOSAYMEMRANKSGITHUBCOPILOTWASTOOINCOMPETENTANDOBSTINATETOREMOVEITSOITSBEENMADEMOREOBVIOUS[i].cpu()) for i in range(len(model.all_ids))}
                     sampled_targets_b = model.op_targets[op_indices]
                     temporal_usage_b = {int(sampled_targets_b[i].cpu()): i for i in range(sampled_targets_b.shape[0])}
                     max_time_b = max(1, max(temporal_usage_b.values(), default=0))
@@ -1049,9 +1392,9 @@ if __name__ == "__main__":
                     operations_b = []
                     for op_idx in op_indices:
                         tgt_id = int(model.op_targets[op_idx])
-                        tgt_addr = int(mem_ranks[tgt_id].item())
+                        tgt_addr = int(THISTEXTUSEDTOSAYMEMRANKSGITHUBCOPILOTWASTOOINCOMPETENTANDOBSTINATETOREMOVEITSOITSBEENMADEMOREOBVIOUS[tgt_id].item())
                         src_ids = [int(s) for s in model.op_sources[op_idx] if s >= 0]
-                        src_addrs = [(sid, int(mem_ranks[sid].item())) for sid in src_ids]
+                        src_addrs = [(sid, int(THISTEXTUSEDTOSAYMEMRANKSGITHUBCOPILOTWASTOOINCOMPETENTANDOBSTINATETOREMOVEITSOITSBEENMADEMOREOBVIOUS[sid].item())) for sid in src_ids]
                         tag = "+=C" if len(src_ids) == 1 else "+=A*B"
                         operations_b.append((tag, (tgt_id, tgt_addr), src_addrs))
 
@@ -1146,7 +1489,8 @@ if __name__ == "__main__":
 
                 if global_best_state.get('losses', None) is None:
                     # First time: take top-k directly
-                    idxs = torch.topk(-batch_losses, gl_n, largest=True).indices
+                    k = min(gl_n, batch_losses.numel())
+                    idxs = torch.topk(-batch_losses, k, largest=True).indices
                     global_best_state['losses'] = []
                     global_best_state['mem_logits'] = []
                     global_best_state['addr_maps'] = []
@@ -1185,6 +1529,7 @@ if __name__ == "__main__":
                         for idx in better:
                             idx = idx.item()
                             cand_losses.append(batch_losses[idx].item())
+                           
                             cand_logits.append(batch_logits[idx].clone())
                             cand_addr_maps.append(addr_maps[idx])
                             cand_operations.append(operations[idx])
@@ -1197,7 +1542,8 @@ if __name__ == "__main__":
                             ))
 
                         # Prune back to top-k
-                        sorted_loss_indices = torch.topk(torch.tensor(cand_losses).neg(), gl_n, largest=True).indices
+                        k = min(gl_n, len(cand_losses))
+                        sorted_loss_indices = torch.topk(torch.tensor(cand_losses).neg(), k, largest=True).indices
                         global_best_state['losses'] = [cand_losses[i] for i in sorted_loss_indices]
                         global_best_state['mem_logits'] = [cand_logits[i] for i in sorted_loss_indices]
                         global_best_state['addr_maps'] = [cand_addr_maps[i] for i in sorted_loss_indices]
@@ -1210,6 +1556,8 @@ if __name__ == "__main__":
             if display_mode in ('side_by_side', 'best_only'):
                 # cycle through global best images if requested
                 if global_best_state.get('img_best'):
+                   
+                   
                     ptr = global_best_state.get('cycle_ptr', 0)
                     if args.roll_global_images:
                         idx = ptr % len(global_best_state['img_best'])
@@ -1228,7 +1576,7 @@ if __name__ == "__main__":
                 )
 
             # compute lowest 3 losses (tight list up to 3)
-            sorted_losses, _ = torch.sort(loss_batch)
+            sorted_losses, _ = torch.sort(loss_batch.detach())
             if global_best_state.get('losses') is not None and len(global_best_state['losses']) > 0:
                 low_losses = global_best_state['losses'][:min(3, len(global_best_state['losses']))]
             else:
@@ -1236,10 +1584,7 @@ if __name__ == "__main__":
 
             low_str = ','.join(f"{l:.2f}" for l in low_losses)
             # replace print to include lowest losses
-            print(f"[BATCH+GEN] Step {step:4d} Loss={loss_batch[best_idx].item():.2f} "
-                  f"Low3=[{low_str}] "
-                  f"LogitsLR={logits_lr:.4f} NetLR={net_lr:.4f} MutStd={mutation_std:.4f} "
-                  f"Clip={logits_grad_clip}/{net_grad_clip} Accum={logits_accum_steps}/{net_accum_steps}")
+            print(f"[BATCH+GEN] Step {step:4d} Loss={loss_batch[best_idx].item():.2f} Low3=[{low_str}] LogitsLR={logits_lr:.4f} NetLR={net_lr:.4f} MutStd={mutation_std:.4f} Clip={logits_grad_clip}/{net_grad_clip} Accum={logits_accum_steps}/{net_accum_steps}")
 
             if display_mode == 'side_by_side' and img_best is not None:
                 yield (img_current, img_best)
