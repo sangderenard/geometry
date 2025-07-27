@@ -1,0 +1,132 @@
+============================= test session starts =============================
+platform win32 -- Python 3.10.6, pytest-8.3.3, pluggy-1.5.0
+rootdir: C:\dev\Powershell\geometry\src\assembly_backend\matmulmemorydistribution
+plugins: anyio-3.7.1
+collected 21 items
+
+cell_pressure.py FF
+
+================================== FAILURES ===================================
+_______________________ test_simulation_with_strides[1] _______________________
+
+stride = 1
+
+    @pytest.mark.parametrize("stride", [1, 2, 3, 4, 5, 7, 8, 9, 11, 13, 16, 17, 19, 23, 29, 31, 64, 128, 256, 512, 1024])
+    def test_simulation_with_strides(stride):
+        CELL_COUNT = random.choice(range(1, 10))
+        # simplified test size calculation: value must be a multiple of stride
+        TEST_SIZE = stride * 10
+        # create test cells with correct left/right boundaries
+        cells = [Cell(stride=stride,
+                      left=i * TEST_SIZE,
+                      len=TEST_SIZE,
+                      right=i * TEST_SIZE + TEST_SIZE)
+                 for i in range(CELL_COUNT)]
+        sim = Simulator(cells)
+        # perform a few simulation steps
+        for _ in range(3):
+>           sp, _ = sim.step(cells)
+
+cell_pressure.py:756: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+cell_pressure.py:732: in step
+    sp, mask = self.minimize(cells)
+cell_pressure.py:474: in minimize
+    self.push_cell_mask(cell)
+cell_pressure.py:87: in push_cell_mask
+    self.set_cell_mask(cell, cell._buf)
+cell_pressure.py:82: in set_cell_mask
+    self.bitbuffer[cell.left:cell.right] = mask
+bitbitbuffer.py:265: in __setitem__
+    self.write_bit_region(self.mask, start, fill_buf, length)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+self = <[IndexError('list index out of range') raised in repr()] BitBitBuffer object at 0x2bc15931e70>
+target = bytearray(b'\x00\x00\x00\x00\x00\x00\x00\x00\x00'), start_bit = 0
+buf = b'\x00', length_bits = 10
+
+    def write_bit_region(self, target, start_bit: int, buf, length_bits: int) -> None:
+        # Accept internal metadata objects or direct mask/data
+        from bitbitbuffer import BitBitItem
+        if isinstance(target, BitBitItem):
+            backing = target.buffer.mask
+            base = target.mask_index
+        elif getattr(target, '_bitbit_cap', False):
+            backing = target._origin if hasattr(target, '_origin') else target
+            base = getattr(target, '_offset', 0)
+        elif target is self.mask or target is self.data:
+            backing = target
+            base = 0
+        else:
+            raise TypeError("Target for writing must be a BitBitItem or BitBitSlice instance")
+    
+        for i in range(length_bits):
+>           src_byte = buf[i // 8]
+E           IndexError: index out of range
+
+bitbitbuffer.py:495: IndexError
+_______________________ test_simulation_with_strides[2] _______________________
+
+stride = 2
+
+    @pytest.mark.parametrize("stride", [1, 2, 3, 4, 5, 7, 8, 9, 11, 13, 16, 17, 19, 23, 29, 31, 64, 128, 256, 512, 1024])
+    def test_simulation_with_strides(stride):
+        CELL_COUNT = random.choice(range(1, 10))
+        # simplified test size calculation: value must be a multiple of stride
+        TEST_SIZE = stride * 10
+        # create test cells with correct left/right boundaries
+        cells = [Cell(stride=stride,
+                      left=i * TEST_SIZE,
+                      len=TEST_SIZE,
+                      right=i * TEST_SIZE + TEST_SIZE)
+                 for i in range(CELL_COUNT)]
+        sim = Simulator(cells)
+        # perform a few simulation steps
+        for _ in range(3):
+>           sp, _ = sim.step(cells)
+
+cell_pressure.py:756: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+cell_pressure.py:732: in step
+    sp, mask = self.minimize(cells)
+cell_pressure.py:474: in minimize
+    self.push_cell_mask(cell)
+cell_pressure.py:87: in push_cell_mask
+    self.set_cell_mask(cell, cell._buf)
+cell_pressure.py:82: in set_cell_mask
+    self.bitbuffer[cell.left:cell.right] = mask
+bitbitbuffer.py:265: in __setitem__
+    self.write_bit_region(self.mask, start, fill_buf, length)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+self = <[IndexError('list index out of range') raised in repr()] BitBitBuffer object at 0x2bc15932320>
+target = bytearray(b'\x00\x00\x00'), start_bit = 0, buf = b'\x00'
+length_bits = 20
+
+    def write_bit_region(self, target, start_bit: int, buf, length_bits: int) -> None:
+        # Accept internal metadata objects or direct mask/data
+        from bitbitbuffer import BitBitItem
+        if isinstance(target, BitBitItem):
+            backing = target.buffer.mask
+            base = target.mask_index
+        elif getattr(target, '_bitbit_cap', False):
+            backing = target._origin if hasattr(target, '_origin') else target
+            base = getattr(target, '_offset', 0)
+        elif target is self.mask or target is self.data:
+            backing = target
+            base = 0
+        else:
+            raise TypeError("Target for writing must be a BitBitItem or BitBitSlice instance")
+    
+        for i in range(length_bits):
+>           src_byte = buf[i // 8]
+E           IndexError: index out of range
+
+bitbitbuffer.py:495: IndexError
+=========================== short test summary info ===========================
+FAILED cell_pressure.py::test_simulation_with_strides[1] - IndexError: index ...
+FAILED cell_pressure.py::test_simulation_with_strides[2] - IndexError: index ...
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! KeyboardInterrupt !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+C:\dev\Powershell\geometry\src\assembly_backend\matmulmemorydistribution\cell_pressure.py:571: KeyboardInterrupt
+(to show a full traceback on KeyboardInterrupt use --full-trace)
+============================== 2 failed in 1.32s ==============================
