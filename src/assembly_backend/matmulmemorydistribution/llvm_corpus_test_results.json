@@ -1,7 +1,0 @@
-{
-  "llvm_sample.ll": {
-    "status": "parsed_and_verified",
-    "jit_run": "success",
-    "retval": 45
-  }
-}
